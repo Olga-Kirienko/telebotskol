@@ -1,0 +1,10 @@
+{
+  "pixel": {
+    "parts": ["pix", "el"],
+    "scrambled_parts": ["el", "pix"]
+  },
+  "algorithm": {
+    "parts": ["al", "go", "rithm"],
+    "scrambled_parts": ["go", "al", "rithm"]
+  }
+}

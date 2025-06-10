@@ -1,0 +1,18 @@
+[
+    {
+        "statement": "The model learns from training data.",
+        "question": "Does the model learn from training data?"
+    },
+    {
+        "statement": "Python supports deep learning frameworks.",
+        "question": "Does Python support deep learning frameworks?"
+    },
+    {
+        "statement": "Data scientists use visualization tools.",
+        "question": "Do data scientists use visualization tools?"
+    },
+    {
+        "statement": "Neural networks process information in layers.",
+        "question": "Do neural networks process information in layers?"
+    }
+]

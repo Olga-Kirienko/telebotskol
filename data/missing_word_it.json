@@ -1,0 +1,10 @@
+[
+    {
+        "statement": "The neural network consists of multiple ______.",
+        "answers": ["layers", "nodes", "neurons"]
+    },
+    {
+        "statement": "Machine learning uses ______ to make predictions.",
+        "answers": ["algorithms", "models"]
+    }
+]

@@ -1,0 +1,24 @@
+[
+    {
+        "phrase": "Machine learning algorithms analyze data to find hidden patterns and make predictions.",
+        "question": "What do machine learning algorithms do?",
+        "options": [
+            "They delete unnecessary data",
+            "They find patterns and make predictions", 
+            "They only store information",
+            "They replace human programmers"
+        ],
+        "correct_answer": "They find patterns and make predictions"
+    },
+    {
+        "phrase": "Convolutional neural networks are especially effective for image recognition tasks.",
+        "question": "What are CNNs best used for?",
+        "options": [
+            "Text processing",
+            "Audio analysis", 
+            "Image recognition",
+            "Database management"
+        ],
+        "correct_answer": "Image recognition"
+    }
+]

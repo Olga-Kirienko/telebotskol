@@ -1,0 +1,12 @@
+[
+    {
+        "sentence": "This algorithm [___] very efficient for large datasets.",
+        "options": ["is", "are", "be", "being"],
+        "answer": "is"
+    },
+    {
+        "sentence": "Data scientists [___] Python for machine learning projects right now.",
+        "options": ["use", "uses", "are using", "using"],
+        "answer": "are using"
+    }
+]

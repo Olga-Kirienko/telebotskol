@@ -1,0 +1,16 @@
+{
+  "terms": [
+    {
+      "english": "pixel",
+      "russian": "пиксель",
+      "transcription": "/ˈpɪksəl/",
+      "image": "pixel.jfif"
+    },
+    {
+      "english": "object detection",
+      "russian": "обнаружение объектов",
+      "transcription": "/əbˈdʒɛkt dɪˈtɛkʃən/",
+      "image": "object_detection.jfif"
+    }
+  ]
+}

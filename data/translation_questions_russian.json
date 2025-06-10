@@ -1,0 +1,11 @@
+{
+  "модель": {
+    "correct": "model",
+    "options": ["model", "data", "result"]
+  },
+  "признак": {
+    "correct": "feature",
+    "options": ["feature", "error", "algorithm"]
+  }
+}
+  

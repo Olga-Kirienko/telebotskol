@@ -1,0 +1,23 @@
+[
+    {
+        "statement": "The algorithm processes data efficiently.",
+        "negations": [
+            "The algorithm does not process data efficiently",
+            "The algorithm doesn't process data efficiently"
+        ]
+    },
+    {
+        "statement": "Neural networks learn from training data.",
+        "negations": [
+            "Neural networks do not learn from training data",
+            "Neural networks don't learn from training data"
+        ]
+    },
+    {
+        "statement": "Python supports machine learning libraries.",
+        "negations": [
+            "Python does not support machine learning libraries",
+            "Python doesn't support machine learning libraries"
+        ]
+    }
+]

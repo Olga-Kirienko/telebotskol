@@ -1,0 +1,45 @@
+
+{
+  "words": [
+    {
+      "english": "analyze",
+      "russian": "пиксель",
+      "transcription": "/ˈpɪksəl/"
+    },
+    {
+      "english": "a black cat sat on a mat",
+      "russian": "обнаружение объектов",
+      "transcription": "/əbˈdʒɛkt dɪˈtɛkʃən/"
+    },
+        {
+      "english": "and ate a fat rat",
+      "russian": "обнаружение объектов",
+      "transcription": "/əbˈdʒɛkt dɪˈtɛkʃən/"
+    },
+        {
+      "english": "this think mother thought",
+      "russian": "обнаружение объектов",
+      "transcription": "/əbˈdʒɛkt dɪˈtɛkʃən/"
+    },
+        {
+      "english": "world wide web",
+      "russian": "обнаружение объектов",
+      "transcription": "/əbˈdʒɛkt dɪˈtɛkʃən/"
+    },
+        {
+      "english": "weather",
+      "russian": "обнаружение объектов",
+      "transcription": "/əbˈdʒɛkt dɪˈtɛkʃən/"
+    },
+        {
+      "english": "girl bird word",
+      "russian": "обнаружение объектов",
+      "transcription": "/əbˈdʒɛkt dɪˈtɛkʃən/"
+    },
+        {
+      "english": "hello have",
+      "russian": "обнаружение объектов",
+      "transcription": "/əbˈdʒɛkt dɪˈtɛkʃən/"
+    }
+  ]
+}

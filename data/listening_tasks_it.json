@@ -1,0 +1,12 @@
+[
+    {
+        "phrase": "Neural networks learn patterns from large datasets to make predictions.",
+        "statement": "Neural networks can only work with small amounts of data.",
+        "correct_answer": "False"
+    },
+    {
+        "phrase": "Python is one of the most popular programming languages for machine learning and data science.",
+        "statement": "Python is widely used in machine learning projects.",
+        "correct_answer": "True"
+    }
+]

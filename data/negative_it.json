@@ -1,0 +1,10 @@
+[
+    {
+        "text": "Преобразуйте предложение в отрицательное: 'The neural network processes data'",
+        "answer": ["The neural network does not process data", "The neural network doesn't process data"]
+    },
+    {
+        "text": "Преобразуйте предложение в отрицательное: 'Machine learning algorithms improve over time'",
+        "answer": ["Machine learning algorithms do not improve over time", "Machine learning algorithms don't improve over time"]
+    }
+]

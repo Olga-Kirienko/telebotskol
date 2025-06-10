@@ -1,0 +1,10 @@
+[
+    {
+        "text": "The model learns from training data.",
+        "answer": "Does the model learn from training data?"
+    },
+    {
+        "text": "Python supports deep learning frameworks.",
+        "answer": "Does Python support deep learning frameworks?"
+    }
+]
