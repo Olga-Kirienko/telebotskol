@@ -421,8 +421,7 @@ async def request_pronunciation_recording(callback: CallbackQuery, state: FSMCon
     """Запрос записи произношения"""
     # Здесь edit_text уместен, так как мы меняем сообщение с инструкцией
     await callback.message.edit_text(
-        "🎤 Запишите голосовое сообщение с произношением слова.\n\n"
-        "Для записи голосового сообщения нажмите на микрофон в Telegram и произнесите слово.",
+        "🎤  Нажми на значок микрофона в правом нижнем углу в Telegram и произнеси слово",
         reply_markup=get_keyboard_with_menu(get_pronunciation_keyboard())
     )
     await state.set_state(LessonStates.PRONUNCIATION_RECORD)
@@ -557,9 +556,8 @@ async def next_pronunciation_word(callback: CallbackQuery, state: FSMContext):
 async def retry_pronunciation(callback: CallbackQuery, state: FSMContext):
     """Повторить попытку произношения"""
     await callback.message.edit_text(
-        "🎤 Попробуйте ещё раз! Запишите голосовое сообщение с произношением слова.\n\n"
-        "Для записи голосового сообщения нажмите на микрофон в Telegram и произнесите слово.",
-        reply_markup=get_keyboard_with_menu(get_pronunciation_keyboard())
+        "🎤 Попробуй  ещё раз! Нажми на значок микрофона в правом нижнем углу в Telegram и произнеси слов",
+         reply_markup=get_keyboard_with_menu(get_pronunciation_keyboard())
     )
     await state.set_state(LessonStates.PRONUNCIATION_RECORD)
     await callback.answer()
@@ -582,8 +580,8 @@ async def pronunciation_complete_next(callback: CallbackQuery, state: FSMContext
 
     # Предполагается, что эта функция существует
     try:
-        # await start_lexical_en_to_ru_block(callback.message, state) # Закомментировано для избежания NameError, если функция не импортирована/не существует
-        await callback.message.answer("Функция для лексического блока (start_lexical_en_to_ru_block) еще не реализована или не импортирована.")
+        await start_lexical_en_to_ru_block(callback.message, state) 
+        await callback.message.answer
     except NameError:
         await callback.message.answer("Функция для лексического блока (start_lexical_en_to_ru_block) еще не реализована или не импортирована.")
     await callback.answer()
@@ -678,16 +676,14 @@ async def process_lexical_en_answer(callback: CallbackQuery, state: FSMContext):
         score += 1
         await state.update_data(lexical_score=score)
     else:
-        response_text = f"{MESSAGES['wrong_answer']}{correct_answer}"
+        response_text = f"❌ Упс, ошибка!\nТвой ответ: {selected_answer}\nПравильный ответ: {correct_answer}"
     
     # Отправляем результат
     await callback.message.edit_text(
-        f"**{current_question['word']}** → **{correct_answer}**\n\n{response_text}",
+        f"**{current_question['word']}**\n\n{response_text}",
         parse_mode="Markdown",
         reply_markup=get_keyboard_with_menu(get_continue_keyboard())
     )
-    
-    await callback.answer()
 
 
 @router.callback_query(F.data == "continue_lexical", LessonStates.LEXICAL_EN_TO_RU)
@@ -827,16 +823,14 @@ async def process_lexical_ru_answer(callback: CallbackQuery, state: FSMContext):
         score += 1
         await state.update_data(lexical_ru_score=score)
     else:
-        response_text = f"{MESSAGES['wrong_answer']}{correct_answer}"
+        response_text = f"❌ Упс, ошибка!\nТвой ответ: {selected_answer}\nПравильный ответ: {correct_answer}"
     
     # Отправляем результат
     await callback.message.edit_text(
-        f"**{current_question['word']}** → **{correct_answer}**\n\n{response_text}",
+        f"**{current_question['word']}**\n\n{response_text}",
         parse_mode="Markdown",
         reply_markup=get_keyboard_with_menu(get_continue_keyboard())
-    )
-    
-    await callback.answer()
+)
 
 
 @router.callback_query(F.data == "continue_lexical", LessonStates.LEXICAL_RU_TO_EN)
@@ -974,7 +968,7 @@ async def check_word_build(callback: CallbackQuery, state: FSMContext):
     else:
         correct = " + ".join(correct_parts)
         await callback.message.edit_text(
-            f"❌ Неправильно.\nПравильный ответ: {correct}\n\n"
+            f"❌ Неправильно.\nТвой ответ: {' + '.join(user_parts)}\nПравильный ответ: {correct}\n\n"
             f"Нажмите «➡️ Далее».",
             reply_markup=InlineKeyboardMarkup(inline_keyboard=[
                 [InlineKeyboardButton(text="➡️ Далее", callback_data="wb_next")]
@@ -1039,7 +1033,7 @@ async def word_build_complete_next(callback: CallbackQuery, state: FSMContext):
     # Отправляем новое сообщение (не меняем старое!)
     await callback.message.answer("🔤 Слово собрано правильно!\n\n"
                                   "🎉 Отличная работа!\n"
-                                  "Переходим к изучению грамматики.")
+                                  "Переходим к следующему этапу")
     
     # Переход к грамматике
     await start_grammar_block(callback.message, state)
@@ -1252,11 +1246,12 @@ async def process_verb_answer(message: Message, state: FSMContext):
         score += 1
         await state.update_data(verb_score=score)
     else:
-        response_text = f"{MESSAGES['wrong_answer']}{current_exercise['answer']}"
+        explanation = current_exercise.get('explanation', '')
+        response_text = f"{MESSAGES['wrong_answer']}{current_exercise['answer']}\n\n💡 {explanation}" if explanation else f"{MESSAGES['wrong_answer']}{current_exercise['answer']}"
     
     # Отправляем результат
     await message.answer(
-        f"**Правильный ответ:** {current_exercise['answer']}\n\n{response_text}",
+        response_text,
         parse_mode="Markdown",
         reply_markup=get_keyboard_with_menu(get_continue_keyboard())
     )
@@ -1371,12 +1366,12 @@ async def process_mchoice_answer(callback: CallbackQuery, state: FSMContext):
         score += 1
         await state.update_data(mchoice_score=score)
     else:
-        response_text = f"{MESSAGES['wrong_answer']}{correct_answer}"
+        explanation = current_exercise.get('explanation', '')
+        response_text = f"{MESSAGES['wrong_answer']}{correct_answer}\n\n💡 {explanation}" if explanation else f"{MESSAGES['wrong_answer']}{correct_answer}"
     
     # Отправляем результат
     await callback.message.edit_text(
-        f"**Вопрос:** {current_exercise['sentence']}\n"
-        f"**Правильный ответ:** {correct_answer}\n\n{response_text}",
+        f"**Вопрос:** {current_exercise['sentence']}\n**Твой ответ:** {selected_answer}\n\n{response_text}",
         parse_mode="Markdown",
         reply_markup=get_keyboard_with_menu(get_continue_keyboard())
     )

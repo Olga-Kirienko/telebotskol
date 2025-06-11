@@ -1,10 +1,12 @@
 [
     {
         "text": "The neural network [___] data from multiple sources. (process)",
-        "answer": "processes"
+        "answer": "processes",
+        "explanation": "Для he/she/it в Present Simple добавляется окончание -es"
     },
     {
         "text": "Machine learning algorithms [___] patterns in big datasets. (find)",
-        "answer": "find"
+        "answer": "find",
+        "explanation": "Для they Present Simple используется глагол в начальной форме"
     }
 ]

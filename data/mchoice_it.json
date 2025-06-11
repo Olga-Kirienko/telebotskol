@@ -2,11 +2,13 @@
     {
         "sentence": "This algorithm [___] very efficient for large datasets.",
         "options": ["is", "are", "be", "being"],
-        "answer": "is"
+        "answer": "is",
+        "explanation": "Используется 'is' потому что 'algorithm' - единственное число (this algorithm)"
     },
     {
         "sentence": "Data scientists [___] Python for machine learning projects right now.",
         "options": ["use", "uses", "are using", "using"],
-        "answer": "are using"
+        "answer": "are using",
+        "explanation": "Используется 'are using', так как now указывает на действие происходящее в данный момент, значит нужно использовать present Cont "
     }
 ]
