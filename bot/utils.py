@@ -2,53 +2,51 @@ import json
 import os
 import asyncio
 import sys
-from typing import Dict, List
+import re
+import random
+import numpy as np
+import librosa
+import torch
+import torchaudio
+from typing import Dict, List, Tuple, Any
 from gtts import gTTS
 import aiofiles
 from openai import AsyncOpenAI
 import tempfile
-from aiogram import types
-import torch
-from transformers import Wav2Vec2Processor, Wav2Vec2ForCTC
-import numpy as np
-import librosa
-from phonemizer import phonemize
+from aiogram import types # Оставляем types, так как он нужен для handle_voice_message
+from aiogram.types import FSInputFile # Добавляем для работы с файлами, если потребуется в других функциях
+from transformers import Wav2Vec2Processor, Wav2Vec2ForCTC, Wav2Vec2FeatureExtractor, Wav2Vec2CTCTokenizer
 from difflib import SequenceMatcher
-import torchaudio
 import subprocess
-import re
-import random
+from datetime import datetime # Добавляем datetime для создания уникальных имен файлов
 
+# --- Установка переменной окружения для eSpeak NG (если требуется) ---
+# Убедитесь, что eSpeak NG установлен и путь к его исполняемому файлу корректен.
+# Пример: C:\Program Files\eSpeak NG
 os.environ['PATH'] += r';C:\Program Files\eSpeak NG'
 
-# --- Загрузка модели один раз при старте ---
-from transformers import Wav2Vec2FeatureExtractor, Wav2Vec2CTCTokenizer
-
+# --- Загрузка моделей один раз при старте приложения ---
+# Эти модели используются для фонетического анализа Wav2Vec2
 feature_extractor = Wav2Vec2FeatureExtractor.from_pretrained("facebook/wav2vec2-lv-60-espeak-cv-ft")
 tokenizer = Wav2Vec2CTCTokenizer.from_pretrained("facebook/wav2vec2-lv-60-espeak-cv-ft")
 processor = Wav2Vec2Processor(feature_extractor=feature_extractor, tokenizer=tokenizer)
 model = Wav2Vec2ForCTC.from_pretrained("facebook/wav2vec2-lv-60-espeak-cv-ft")
 
-
-# Добавляем путь к корневой директории
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from config import DATA_PATH, AUDIO_PATH, OPENAI_API_KEY
 
-from config import DATA_PATH, AUDIO_PATH
+# Проверяем доступность OpenAI API
+OPENAI_AVAILABLE = bool(OPENAI_API_KEY)
+if OPENAI_AVAILABLE:
+    try:
+        import openai
+    except ImportError:
+        OPENAI_AVAILABLE = False
+        OPENAI_API_KEY = None
 
-# Пытаемся импортировать OpenAI, если доступен
-try:
-    import openai
-    from config import OPENAI_API_KEY
-    OPENAI_AVAILABLE = bool(OPENAI_API_KEY)
-    if OPENAI_AVAILABLE:
-        openai.api_key = OPENAI_API_KEY
-except (ImportError, AttributeError):
-    OPENAI_AVAILABLE = False
-    OPENAI_API_KEY = None
-
-
+# --- Вспомогательные функции для работы с данными и аудио ---
 async def load_json_data(filename: str) -> Dict:
-    """Загрузка данных из JSON файла"""
+    """Загружает данные из JSON файла."""
     file_path = os.path.join(DATA_PATH, filename)
     try:
         async with aiofiles.open(file_path, 'r', encoding='utf-8') as file:
@@ -62,325 +60,505 @@ async def load_json_data(filename: str) -> Dict:
         return {}
 
 
-async def generate_audio(text: str, filename: str, lang: str = 'en') -> str:
-    """Генерация аудио файла из текста"""
-    audio_file_path = os.path.join(AUDIO_PATH, f"{filename}.mp3")
-    
-    # Если файл уже существует, возвращаем путь
+# Словарь для кэширования путей к MP3 файлам
+# Ключ: (filename_prefix, lang, slow_mode) -> путь_к_файлу
+_mp3_cache = {}
+
+
+async def generate_audio(text: str, filename_prefix: str, lang: str = 'en', slow_mode: bool = False) -> str:
+    """
+    Генерирует аудиофайл из текста с использованием gTTS.
+    Кэширует MP3 файлы на основе текста, языка и режима скорости.
+    :param text: Текст для генерации.
+    :param filename_prefix: Базовое имя файла (например, "apple" из JSON).
+    :param lang: Язык.
+    :param slow_mode: True для замедленной речи, False для обычной.
+    :return: Путь к сгенерированному или кэшированному MP3 файлу.
+    """
+    # Создаём уникальный суффикс для файла, чтобы учитывать slow_mode
+    speed_suffix = "_slow" if slow_mode else ""
+    # Создаём детерминированное имя файла, которое будет уникально для текста, языка и скорости
+    # Используем комбинацию filename_prefix и хэша текста для надёжного кэширования,
+    # избегая слишком длинных имён файлов и сохраняя читаемость.
+    # Это позволяет кэшировать "Apple" и "Apple_slow" как разные файлы.
+    import hashlib # Временный импорт для хэша, если он нужен только здесь
+    text_hash = hashlib.md5(f"{text}-{lang}-{slow_mode}".encode('utf-8')).hexdigest()[:8] # Сокращаем хэш
+
+    # Используем clean_prefix, чтобы имя файла было валидным и коротким
+    clean_prefix = re.sub(r'[^a-zA-Z0-9_]', '', filename_prefix).lower()
+    if len(clean_prefix) > 20: # Обрезаем, чтобы не было слишком длинных префиксов
+        clean_prefix = clean_prefix[:20]
+
+    final_filename = f"{clean_prefix}{speed_suffix}_{text_hash}.mp3"
+    audio_file_path = os.path.join(AUDIO_PATH, final_filename)
+
+    # Ключ для кэша в памяти, чтобы быстро найти файл, если он уже сгенерирован
+    cache_key = (text, lang, slow_mode)
+
+    # 1. Проверяем кэш в памяти
+    if cache_key in _mp3_cache:
+        cached_path = _mp3_cache[cache_key]
+        if os.path.exists(cached_path):
+            print(f"Используется кэшированный MP3 файл из памяти: {cached_path}")
+            return cached_path
+        else:
+            # Если файл удалён с диска, но ссылка в кэше осталась, удаляем её
+            del _mp3_cache[cache_key]
+            print(f"Кэшированный MP3 файл не найден на диске, перегенерация.")
+
+    # 2. Если не найдено в кэше, проверяем файл на диске
     if os.path.exists(audio_file_path):
+        print(f"Используется существующий MP3 файл на диске: {audio_file_path}")
+        _mp3_cache[cache_key] = audio_file_path # Добавляем в кэш в памяти
         return audio_file_path
-    
+
+    # 3. Если файла нет, генерируем его
     try:
-        # Создаем аудио в отдельном потоке
         loop = asyncio.get_event_loop()
         await loop.run_in_executor(
-            None, 
-            lambda: gTTS(text=text, lang=lang, slow=False).save(audio_file_path)
+            None,
+            lambda: gTTS(text=text, lang=lang, slow=slow_mode).save(audio_file_path)
         )
+        print(f"MP3 аудио сгенерировано: {audio_file_path}")
+        _mp3_cache[cache_key] = audio_file_path # Добавляем в кэш в памяти
         return audio_file_path
     except Exception as e:
-        print(f"Ошибка генерации аудио: {e}")
+        print(f"Ошибка генерации MP3 аудио: {e}")
+        # В случае ошибки, удаляем недоделанный файл, если он есть
+        if os.path.exists(audio_file_path):
+            os.remove(audio_file_path)
         return None
+DATA_DIR = "data"
+os.makedirs(DATA_DIR, exist_ok=True) # Создаем папку, если ее нет
 
-
+PROGRESS_FILE = os.path.join(DATA_DIR, "user_progress.json")
 class UserProgress:
-    """Простое управление прогрессом пользователя"""
-    
+    """Управление прогрессом пользователя с сохранением на диск."""
+
     def __init__(self):
         self.users_progress = {}
-    
+        self._load_progress() # Загружаем прогресс при инициализации
+
+    def _load_progress(self):
+        """Загружает прогресс пользователей из файла."""
+        if os.path.exists(PROGRESS_FILE):
+            try:
+                with open(PROGRESS_FILE, 'r', encoding='utf-8') as f:
+                    # Преобразуем ключи user_id из строк в int, т.к. JSON сохраняет их как строки
+                    loaded_data = json.load(f)
+                    self.users_progress = {int(k): v for k, v in loaded_data.items()}
+                print(f"Прогресс пользователей загружен из {PROGRESS_FILE}")
+            except (json.JSONDecodeError, ValueError) as e:
+                print(f"Ошибка чтения файла прогресса {PROGRESS_FILE}: {e}. Начинаем с чистого листа.")
+                self.users_progress = {}
+        else:
+            print(f"Файл прогресса {PROGRESS_FILE} не найден. Начинаем с чистого листа.")
+
+    def _save_progress(self):
+        """Сохраняет прогресс пользователей в файл."""
+        try:
+            with open(PROGRESS_FILE, 'w', encoding='utf-8') as f:
+                json.dump(self.users_progress, f, indent=4, ensure_ascii=False)
+            # print(f"Прогресс пользователей сохранен в {PROGRESS_FILE}") # Можно раскомментировать для отладки
+        except IOError as e:
+            print(f"Ошибка записи файла прогресса {PROGRESS_FILE}: {e}")
+
     def get_progress(self, user_id: int) -> Dict:
-        """Получить прогресс пользователя"""
+        """Получить прогресс пользователя или инициализировать его."""
+        # Убедитесь, что эти поля инициализируются при первом получении прогресса пользователя
+        # Добавляем current_pronunciation_data и удаляем current_pronunciation_text,
+        # так как current_pronunciation_data будет его заменой.
         return self.users_progress.get(user_id, {
             'current_block': 'terms',
             'current_item': 0,
-            'completed_items': []
+            'completed_items': [],
+            # 'current_pronunciation_text': None,  # Можно удалить, если переходим на current_pronunciation_data
+            'current_pronunciation_slow_mode': False,
+            'current_pronunciation_data': None,  # <--- НОВОЕ ПОЛЕ: будет хранить всю инфу о фразе
         })
-    
-    def update_progress(self, user_id: int, **kwargs):
-        """Обновить прогресс пользователя"""
+
+    def update_progress(self, user_id: int, **kwargs: Any):
+        """Обновить прогресс пользователя и сохранить."""
         if user_id not in self.users_progress:
-            self.users_progress[user_id] = {
-                'current_block': 'terms',
-                'current_item': 0,
-                'completed_items': []
-            }
-        
+            self.users_progress[user_id] = self.get_progress(user_id)
         self.users_progress[user_id].update(kwargs)
-    
+        self._save_progress() # Сохраняем после каждого обновления
+
     def reset_progress(self, user_id: int):
-        """Сбросить прогресс пользователя"""
-        self.users_progress[user_id] = {
-            'current_block': 'terms',
-            'current_item': 0,
-            'completed_items': []
-        }
+        """Сбросить прогресс пользователя и сохранить."""
+        self.users_progress[user_id] = self.get_progress(user_id)
+        self._save_progress() # Сохраняем после сброса
 
 
-async def recognize_speech(audio_file_path: str) -> Dict:
-    """Простое распознавание речи (заглушка)"""
-    # Пока что возвращаем случайный результат для тестирования
-    import random
-    
-    # В реальной реализации здесь будет speech_recognition
-    success = random.choice([True, False])
-    
-    if success:
-        return {
-            "success": True,
-            "text": "recognized_word",
-            "confidence": 0.85
-        }
-    else:
-        return {
-            "success": False,
-            "text": "",
-            "confidence": 0.0
-        }
-        
-# --- Функции для обработки произношения---
+# --- Функции для обработки произношения ---
+
 async def convert_ogg_to_wav(input_path: str, output_path: str):
-    """Конвертирует ogg в wav 16kHz mono"""
+    """Конвертирует OGG аудиофайл в WAV."""
     try:
-        # Загружаем аудио
         waveform, sample_rate = torchaudio.load(input_path)
-        
-        # Конвертируем в моно (если нужно)
         if waveform.shape[0] > 1:
-            waveform = torch.mean(waveform, dim=0, keepdim=True)
-
-        # Ресэмплируем до 16kHz
+            waveform = torch.mean(waveform, dim=0, keepdim=True)  # Конвертируем стерео в моно
         if sample_rate != 16000:
             resampler = torchaudio.transforms.Resample(orig_freq=sample_rate, new_freq=16000)
             waveform = resampler(waveform)
-
-        # Сохраняем как WAV
         torchaudio.save(output_path, waveform, 16000, format="wav")
         return True
     except Exception as e:
         print(f"Ошибка конвертации ogg → wav: {e}")
         return False
 
+
+# Список диакритических знаков IPA для удаления/нормализации
+DIACRITICS = [
+    'ː', 'ˑ', 'ˈ', 'ˌ', 'ʰ', 'ʷ', 'ʲ',
+    '\u0325', '\u032C', '\u0303', '\u0329', '\u0361', '˞'
+]
+
+# Группы похожих фонем для более точного сравнения
+similar_groups = [
+    ['i', 'ɪ', 'iː'],
+    ['e', 'ɛ', 'eː'],
+    ['æ', 'a', 'ʌ'],
+    ['o', 'ɔ', 'oː', 'ʊ'],
+    ['u', 'uː', 'ʊ'],
+    ['ɚ', 'ər', 'ɜr', 'ɜː'],
+    ['θ', 'f'],
+    ['ð', 'v'],
+    ['s', 'z'],
+    ['ʃ', 'ʒ'],
+    ['t', 'd'],
+    ['k', 'g'],
+    ['p', 'b'],
+    ['r', 'ɹ', 'ɻ'],
+    ['l', 'ɫ'],
+]
+
+
 def normalize_phonemes(phonemes: str) -> str:
-    """
-    Нормализует фонемы для корректного сравнения
-    """
-    # Убираем все символы ударения и диакритику
-    phonemes = re.sub(r'[ˈˌ`´ʼ\']', '', phonemes)
-    
-    # Маппинг различий между espeak IPA и wav2vec2
+    """Нормализует фонемы, удаляя диакритические знаки и преобразуя схожие фонемы."""
+    s = phonemes.strip()
+    for d in DIACRITICS:
+        esc = re.escape(d)
+        s = re.sub(rf'([^\s])\s*{esc}', r'\1', s)  # Удаляем диакритику, если она следует за фонемой без пробела
+    s = re.sub(r'[ˈˌ`´ʼ\']', '', s)  # Удаляем знаки ударения/апострофы
+
+    # Карта для упрощения фонем
     phoneme_mapping = {
-        # Гласные
-        'ɜː': 'ɚ',  # r-colored vowel
-        'əʊ': 'oʊ', # diphthong
-        'ɛ': 'e',   # close-mid front unrounded
-        'ɔː': 'ɑː', # open back rounded
-        'ɪ': 'i',   # near-close front unrounded
-        'ʌ': 'ʌ',   # open-mid back unrounded
-        'aɪ': 'aɪ', # diphthong
-        'æ': 'æ',   # near-open front unrounded
-        
-        # Согласные
-        'ð': 'ð',   # voiced dental fricative
-        'θ': 'θ',   # voiceless dental fricative
-        'ŋ': 'ŋ',   # velar nasal
-        'ʃ': 'ʃ',   # voiceless postalveolar fricative
-        'ʒ': 'ʒ',   # voiced postalveolar fricative
-        'tʃ': 'tʃ', # voiceless postalveolar affricate  
-        'dʒ': 'dʒ', # voiced postalveolar affricate
-        'j': 'j',   # palatal approximant
-        'w': 'w',   # voiced labio-velar approximant
-        'r': 'ɹ',   # alveolar approximant
-        'l': 'l',   # alveolar lateral approximant
+        'ɜː': 'ɚ', 'əʊ': 'oʊ', 'ɛ': 'e', 'ɔː': 'ɑː', 'ɪ': 'i', 'ʌ': 'ʌ',
+        'aɪ': 'aɪ', 'æ': 'æ', 'ð': 'ð', 'θ': 'θ', 'ŋ': 'ŋ', 'ʃ': 'ʃ',
+        'ʒ': 'ʒ', 'tʃ': 'tʃ', 'dʒ': 'dʒ', 'j': 'j', 'w': 'w', 'r': 'ɹ',
+        'l': 'l',
     }
-    
-    # Применяем маппинг
+
     for old, new in phoneme_mapping.items():
-        phonemes = phonemes.replace(old, new)
-    
-    # Убираем пробелы и приводим к нижнему регистру
-    phonemes = ''.join(phonemes.split()).lower()
-    
-    return phonemes
+        s = s.replace(old, new)
+
+    s = ''.join(s.split()).lower()  # Удаляем все пробелы и приводим к нижнему регистру
+    return s.strip()
+
+
+def get_phonemes_from_espeak(text: str) -> str:
+    """Получает фонемы (IPA) для текста с помощью eSpeak NG."""
+    try:
+        # Убедитесь, что espeak-ng.exe находится в PATH или укажите полный путь
+        espeak_path = os.path.join(os.environ.get('ESPEAK_NG_PATH', r'C:\Program Files\eSpeak NG'), 'espeak-ng.exe')
+        if not os.path.exists(espeak_path):
+            raise FileNotFoundError(
+                f"espeak-ng.exe не найден по пути: {espeak_path}. Проверьте установку eSpeak NG или переменную окружения ESPEAK_NG_PATH.")
+
+        result = subprocess.run(
+            [espeak_path, '-q', '--ipa', text],
+            capture_output=True,
+            text=True,
+            encoding='utf-8',
+            check=True
+        )
+        return result.stdout.strip()
+    except FileNotFoundError as e:
+        print(f"Ошибка: {e}")
+        return ""
+    except subprocess.CalledProcessError as e:
+        print(f"Ошибка выполнения espeak-ng (код: {e.returncode}): {e.stderr}")
+        return ""
+    except Exception as e:
+        print(f"Общая ошибка при вызове espeak-ng: {e}")
+        return ""
+
 
 def text_to_phonemes_simplified(text: str) -> str:
-    """
-    Переводит текст в упрощенные фонемы, совместимые с wav2vec2
-    """
-    try:
-        # Получаем IPA от espeak
-        result = subprocess.run([
-            r'C:\Program Files\eSpeak NG\espeak-ng.exe',
-            '-q', '--ipa', text
-        ], capture_output=True, text=True, encoding='utf-8')
-        
-        ipa_output = result.stdout.strip()
-        
-        # Нормализуем для совместимости с wav2vec2
-        normalized = normalize_phonemes(ipa_output)
-        
-        return normalized
-        
-    except Exception as e:
-        print(f"Ошибка espeak: {e}")
-        return ""
+    """Преобразует текст в упрощенные фонемы."""
+    ipa_output = get_phonemes_from_espeak(text)
+    normalized = normalize_phonemes(ipa_output)
+    return normalized
+
 
 async def audio_to_phonemes(audio_path: str) -> str:
-    """Конвертация аудио в фонемы с помощью Wav2Vec2"""
+    """Транскрибирует аудио в фонемы с использованием Wav2Vec2 модели."""
     try:
-        # Загрузка аудио
-        speech, sr = librosa.load(audio_path, sr=16000)
-        
-        # Обработка входных данных
-        input_values = processor(speech, return_tensors="pt", sampling_rate=16000).input_values
-        
-        # Предсказание
+        # torchaudio.load() может быть более универсальным для разных форматов
+        waveform, sr = torchaudio.load(audio_path)
+
+        if waveform.shape[0] > 1:
+            waveform = torch.mean(waveform, dim=0)  # Конвертация стерео в моно
+
+        if sr != 16000:
+            resampler = torchaudio.transforms.Resample(orig_freq=sr, new_freq=16000)
+            waveform = resampler(waveform)
+
+        # Нормализация громкости для Wav2Vec2
+        waveform = (waveform - waveform.mean()) / (waveform.std() + 1e-7)
+
+        input_values = processor(waveform.numpy(), return_tensors="pt", sampling_rate=16000).input_values
         with torch.no_grad():
             logits = model(input_values).logits
-        
-        # Получаем предсказанные токены
         predicted_ids = torch.argmax(logits, dim=-1)
-        
-        # Декодируем в символы
         transcription = processor.decode(predicted_ids[0])
-        
-        # Нормализуем результат
         normalized = normalize_phonemes(transcription)
-        
         return normalized
-        
     except Exception as e:
-        print(f"Ошибка обработки аудио: {e}")
+        print(f"Ошибка обработки аудио в фонемы: {e}")
         return ""
+
 
 def advanced_phoneme_comparison(expected: str, user: str) -> float:
     """
-    Улучшенное сравнение фонем с учетом фонетической близости
+    Сравнивает две строки фонем, используя SequenceMatcher.ratio()
+    для получения общей точности.
     """
-    # Группы фонетически близких звуков
-    similar_groups = [
-        ['i', 'ɪ', 'iː'],           # близкие гласные
-        ['e', 'ɛ', 'eː'],          
-        ['æ', 'a', 'ʌ'],           
-        ['o', 'ɔ', 'oː', 'ʊ'],     
-        ['u', 'uː', 'ʊ'],          
-        ['ɚ', 'ər', 'ɜr', 'ɜː'],   # r-colored vowels
-        ['θ', 'f'],                 # глухие фрикативы
-        ['ð', 'v'],                 # звонкие фрикативы
-        ['s', 'z'],                 # сибилянты
-        ['ʃ', 'ʒ'],                 
-        ['t', 'd'],                 # альвеолярные взрывные
-        ['k', 'g'],                 # велярные взрывные
-        ['p', 'b'],                 # билабиальные взрывные
-        ['r', 'ɹ', 'ɻ'],            # различные r-звуки
-        ['l', 'ɫ'],                 # боковые согласные
-    ]
-    
-    # Создаем карту похожести
-    similarity_map = {}
-    for group in similar_groups:
-        for phoneme in group:
-            similarity_map[phoneme] = group
-    
-    def get_similarity_score(ph1: str, ph2: str) -> float:
-        if ph1 == ph2:
-            return 1.0
-        
-        # Проверяем фонетическую близость
-        group1 = similarity_map.get(ph1, [ph1])
-        group2 = similarity_map.get(ph2, [ph2])
-        
-        if ph1 in group2 or ph2 in group1:
-            return 0.8  # высокая похожесть
-        
-        return 0.0  # нет похожести
-    
-    # Динамическое программирование для выравнивания
-    len1, len2 = len(expected), len(user)
-    dp = [[0] * (len2 + 1) for _ in range(len1 + 1)]
-    
-    # Заполняем матрицу
-    for i in range(1, len1 + 1):
-        for j in range(1, len2 + 1):
-            match_score = get_similarity_score(expected[i-1], user[j-1])
-            
-            dp[i][j] = max(
-                dp[i-1][j-1] + match_score,  # совпадение/замена
-                dp[i-1][j],                  # удаление
-                dp[i][j-1]                   # вставка
-            )
-    
-    # Вычисляем финальный процент
-    max_length = max(len1, len2)
-    if max_length == 0:
+    if not expected and not user:
         return 100.0
-    
-    alignment_score = dp[len1][len2]
-    percentage = (alignment_score / max_length) * 100
-    
-    return round(percentage, 1)
+    if not expected or not user:
+        return 0.0  # Если одна строка пуста, а другая нет
 
-def compare_phonemes(expected: str, user: str) -> float:
-    """
-    Основная функция сравнения с отладочной информацией
-    """
-    print(f"[DEBUG] Сравниваем:")
-    print(f"  Ожидалось (нормализованное): {expected}")
-    print(f"  Получено (нормализованное): {user}")
-    
-    # Используем улучшенное сравнение
-    advanced_score = advanced_phoneme_comparison(expected, user)
-    
-    # Также считаем простое совпадение для сравнения
-    simple_score = round(SequenceMatcher(None, expected, user).ratio() * 100, 1)
-    
-    print(f"  Простое совпадение: {simple_score}%")
-    print(f"  Фонетическое совпадение: {advanced_score}%")
-    
-    # Возвращаем лучший результат
-    return max(simple_score, advanced_score)
+    matcher = SequenceMatcher(None, expected, user)
+    return round(matcher.ratio() * 100, 1)
 
-async def simple_pronunciation_check(target_text: str, audio_path: str) -> float:
+
+def _preprocess_text_for_phoneme_splitting(text: str) -> str:
     """
-    Проверяет произношение пользователя по аудиозаписи.
-    Возвращает процент точности совпадения фонем.
+    Предварительная обработка текста для разделения на слова
+    для корректного получения фонем.
     """
-    
-    # 1. Переводим аудио в фонемы
-    user_phonemes = await audio_to_phonemes(audio_path)
-    
-    # 2. Переводим эталонный текст в совместимые фонемы
+    text = re.sub(r"['’-]", " ", text)  # Заменяем апострофы и дефисы пробелами
+    text = re.sub(r'[^\w\s]', '', text)  # Удаляем знаки препинания
+    text = re.sub(r'\s+', ' ', text).strip()  # Убираем лишние пробелы
+    return text.lower()
+
+
+def analyze_word_errors(
+        text_words: List[str],
+        orig_phonemes: str,  # Это flat строка
+        user_phonemes: str  # Это flat строка
+) -> List[Dict]:
+    """Анализ ошибок произношения по отдельным словам."""
+
+    # Если orig_phonemes не был получен с пробелами между словами,
+    # нам нужно получить фонемное представление каждого слова отдельно
+    # для корректного разделения на границы слов.
+    # orig_phonemes, переданная сюда, уже является "плоской" строкой из `text_to_phonemes_simplified`.
+    # Поэтому для пословного анализа нам нужно снова сгенерировать фонемы для каждого слова.
+    orig_words_phonemes_separated = [text_to_phonemes_simplified(word) for word in text_words]
+
+    # Создаем "плоскую" версию эталонных фонем, но теперь гарантированно разбитую по словам,
+    # чтобы сопоставить границы слов.
+    orig_flat_with_word_boundaries = "".join(orig_words_phonemes_separated)
+    user_flat = user_phonemes  # user_phonemes уже нормализованы и без пробелов
+
+    # Проверяем, чтобы длины фонем соответствовали ожидаемым
+    if not orig_flat_with_word_boundaries and not user_flat:  # Обе строки пусты
+        return []
+    if not orig_flat_with_word_boundaries or not user_flat:  # Одна строка пуста, другая нет
+        # В этом случае пословный анализ может быть неинформативен,
+        # но мы должны хотя бы указать, что что-то не так.
+        # Это крайний случай, который обычно обрабатывается на уровне overall_accuracy.
+        # Для простоты, если есть слова в text_words, вернем по ним 0%
+        return [{
+            'word': word,
+            'expected': text_to_phonemes_simplified(word),
+            'detected': user_flat,  # detected_word_phonemes не получится точно выделить
+            'accuracy': 0.0,
+            'errors': ["Значительные расхождения с ожидаемым произношением всего предложения."]
+        } for word in text_words]
+
+    word_boundaries = []
+    current_pos = 0
+    for word_ph_separated in orig_words_phonemes_separated:
+        start = current_pos
+        end = start + len(word_ph_separated)
+        word_boundaries.append((start, end))
+        current_pos = end
+
+    # Используем SequenceMatcher для общего выравнивания двух полных строк фонем
+    matcher = SequenceMatcher(None, orig_flat_with_word_boundaries, user_flat)
+    alignment = matcher.get_opcodes()
+
+    results = []
+
+    for idx, (start, end) in enumerate(word_boundaries):
+        if idx >= len(text_words):
+            break
+
+        word = text_words[idx]
+        expected_word_phonemes = orig_flat_with_word_boundaries[start:end]
+
+        detected_word_phonemes = ''
+
+        # Собираем фонемы, произнесенные пользователем, для текущего слова
+        # Идем по общему выравниванию и извлекаем те части, которые соответствуют текущему слову
+        for tag, i1, i2, j1, j2 in alignment:
+            # i1, i2 относятся к orig_flat_with_word_boundaries
+            # j1, j2 относятся к user_flat
+
+            # Если блок выравнивания полностью до начала текущего слова
+            if i2 <= start:
+                continue
+            # Если блок выравнивания полностью после конца текущего слова
+            if i1 >= end:
+                break
+
+            # Находим пересечение блока выравнивания с границами текущего слова
+            clip_start_orig = max(i1, start)
+            clip_end_orig = min(i2, end)
+
+            if clip_end_orig <= clip_start_orig:  # Если нет пересечения или оно нулевое
+                continue
+
+            # Определяем, какую часть из user_flat нужно взять
+            # Это приблизительный расчет, основанный на пропорции
+            # Более точное сопоставление требует построения нового SequenceMatcher для каждой пары слово-пользователь
+
+            # Пропорция текущего совпадения/различия в контексте всего блока
+            ratio_in_block = (clip_end_orig - clip_start_orig) / (i2 - i1) if (i2 - i1) > 0 else 0
+
+            # Часть, которая была произнесена пользователем для этой части блока
+            detected_segment_length = int((j2 - j1) * ratio_in_block)
+
+            # Если tag - 'equal' или 'replace', берем соответствующую часть из произнесенных
+            if tag in ('equal', 'replace'):
+                # Добавляем часть, которая совпадает или является заменой
+                detected_word_phonemes += user_flat[j1: j1 + detected_segment_length]
+            elif tag == 'insert' and (i1 >= start and i1 < end):
+                # Если это "вставка" в ожидаемом тексте, но фактически в произнесенном, и она попадает в границы слова
+                detected_word_phonemes += user_flat[j1: j2]  # Вставка целиком
+
+        # Теперь, когда у нас есть предположительно произнесенные фонемы для слова, сравниваем их
+        if not detected_word_phonemes and expected_word_phonemes:
+            # Случай, когда слово было полностью пропущено или не распознано
+            accuracy = 0.0
+            errors = [f"Полностью пропустили или сильно исказили произношение."]
+            highlighted_expected = [f"<b>{expected_word_phonemes}</b>"]
+            highlighted_detected = ["-"]  # Обозначаем отсутствие
+        elif not expected_word_phonemes and detected_word_phonemes:
+            # Случай, когда в ожидаемом слове нет фонем (редко, но возможно), а пользователь что-то произнес
+            accuracy = 0.0  # Не соответствует ожидаемому
+            errors = [f"Лишнее произношение: '{detected_word_phonemes}'"]
+            highlighted_expected = ["-"]
+            highlighted_detected = [f"<b>{detected_word_phonemes}</b>"]
+        elif not expected_word_phonemes and not detected_word_phonemes:
+            accuracy = 100.0  # Оба пусты - идеально
+            errors = []
+            highlighted_expected = [""]
+            highlighted_detected = [""]
+        else:
+            # Детальное сравнение для конкретного слова
+            matcher_word = SequenceMatcher(None, expected_word_phonemes, detected_word_phonemes)
+            word_alignment = matcher_word.get_opcodes()
+
+            highlighted_expected = []
+            highlighted_detected = []
+            errors = []
+
+            for tag, i1, i2, j1, j2 in word_alignment:
+                exp_chunk = expected_word_phonemes[i1:i2]
+                det_chunk = detected_word_phonemes[j1:j2]
+
+                if tag == 'equal':
+                    highlighted_expected.append(exp_chunk)
+                    highlighted_detected.append(det_chunk)
+                elif tag == 'replace':
+                    highlighted_expected.append(f"<b>{exp_chunk}</b>")
+                    highlighted_detected.append(f"<b>{det_chunk}</b>")
+                    errors.append(f"Заменили '{exp_chunk}' на '{det_chunk}'")
+                elif tag == 'delete':
+                    highlighted_expected.append(f"<b>{exp_chunk}</b>")
+                    errors.append(f"Пропустили '{exp_chunk}'")
+                elif tag == 'insert':
+                    highlighted_detected.append(f"<b>{det_chunk}</b>")
+                    errors.append(f"Добавили лишнее '{det_chunk}'")
+
+            accuracy = matcher_word.ratio() * 100
+
+        results.append({
+            'word': word,
+            'expected': ''.join(highlighted_expected),
+            'detected': ''.join(highlighted_detected),
+            'accuracy': accuracy,
+            'errors': errors
+        })
+
+    return results
+
+
+async def simple_pronunciation_check(
+        target_text: str,
+        user_audio_path: str,
+        lower_threshold: float,
+        upper_threshold: float
+) -> Tuple[float, str, str]:
+    """
+    Выполняет проверку произношения аудиофайла.
+    Возвращает общую точность, вердикт и детальный анализ (если уместно).
+    """
     expected_phonemes = text_to_phonemes_simplified(target_text)
-    
-    # 3. Сравниваем с учетом фонетической близости
-    accuracy = compare_phonemes(expected_phonemes, user_phonemes)
-    
-    return accuracy
+    user_phonemes = await audio_to_phonemes(user_audio_path)
+
+    # Теперь overall_accuracy будет использовать SequenceMatcher.ratio() для всей строки
+    overall_accuracy = advanced_phoneme_comparison(expected_phonemes, user_phonemes)
+
+    verdict = ""
+    analysis_text = ""
+
+    print(f"Используемые пороги: Нижний: {lower_threshold:.1f}%, Верхний: {upper_threshold:.1f}%")
+    print(f"Ожидаемые фонемы: {expected_phonemes}")
+    print(f"Фонемы пользователя: {user_phonemes}")
+
+    if overall_accuracy >= upper_threshold:
+        verdict = "🎉 <b>Отличное произношение!</b>"
+        analysis_text = ""
+    elif overall_accuracy >= lower_threshold:
+        verdict = "👍 <b>Хорошо, но можно лучше!</b>"
+        # Разбиваем исходный текст на слова для пословного анализа
+        text_words_processed = _preprocess_text_for_phoneme_splitting(target_text).split()
+        word_results = analyze_word_errors(text_words_processed, expected_phonemes, user_phonemes)
+
+        analysis = ["\n\n📝 <b>Обнаружены следующие ошибки произношения:</b>"]
+        for result in word_results:
+            analysis.append(f"\n▸ <b>{result['word'].upper()}</b> ({result['accuracy']:.1f}%)")
+            analysis.append(f"   🔹 Ожидалось: /{result['expected']}/")
+            analysis.append(f"   🔸 Произнесено: /{result['detected']}/")
+            if result['errors']:
+                analysis.append("   💡 Подробнее: ")
+                for error_detail in result['errors']:
+                    analysis.append(f"     • {error_detail}")
+        analysis_text = "\n".join(analysis)
+    else:  # accuracy < lower_threshold
+        verdict = "👎 <b>Требуется больше практики!</b>"
+        analysis_text = "\n\n<i>Попробуйте сосредоточиться на основных звуках. Практикуйтесь медленно и четко.</i>"
+
+    return overall_accuracy, verdict, analysis_text
+
+
+# --- Функции AI ассистента ---
 
 async def get_teacher_response(question: str) -> str:
-    """
-    AI агент-учитель с использованием GPT-4.1-nano
-    """
+    """Получает ответ от AI учителя по грамматике."""
     if not OPENAI_AVAILABLE:
-        # Fallback к простым ответам если нет OpenAI
         return await get_simple_teacher_response(question)
-    
     try:
-        # Системный промпт для агента-учителя
-        system_prompt = """Ты — Telegram-бот для изучения английского языка. Веди пользователя по этапам: введение новых слов, фонетика, лексика, грамматика, лексико-грамматические задания, аудирование, письмо и говорение. 
-
-На каждом этапе давай задания, проверяй ответы, объясняй ошибки. Если пользователь не понял правило — организуй диалог для разъяснения. 
-
-Всегда объясняй на русском языке. Используй картинки, аудио, варианты ответов, текстовые и голосовые задания. Поддерживай дружелюбный и мотивирующий стиль общения.
-
-Сейчас ты отвечаешь на вопрос пользователя по грамматике английского языка. Особое внимание уделяй терминологии программирования, Data Science и нейросетей в примерах."""
-        
-        # Создаем клиент OpenAI
-        client = openai.AsyncOpenAI(api_key=OPENAI_API_KEY)
-        
-        # Отправляем запрос к GPT-4.1-nano
+        system_prompt = """Ты — Telegram-бот для изучения английского языка. Сейчас ты отвечаешь на вопрос пользователя по грамматике. Объясняй на русском, используя терминологию программирования, Data Science и нейросетей в примерах."""
+        client = AsyncOpenAI(api_key=OPENAI_API_KEY)
         response = await client.chat.completions.create(
-            model="gpt-4o-mini",  # Используем доступную модель вместо gpt-4.1-nano
+            model="gpt-4o-mini",
             messages=[
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": f"Вопрос по грамматике: {question}"}
@@ -388,19 +566,14 @@ async def get_teacher_response(question: str) -> str:
             max_tokens=500,
             temperature=0.7
         )
-        
         return f"🤖 {response.choices[0].message.content}"
-        
     except Exception as e:
         print(f"Ошибка OpenAI API: {e}")
-        # Fallback к простым ответам
         return await get_simple_teacher_response(question)
 
 
 async def get_simple_teacher_response(question: str) -> str:
-    """
-    Простые ответы на типичные вопросы (fallback)
-    """
+    """Предоставляет простой (заглушечный) ответ учителя при отсутствии OpenAI API."""
     responses = {
         "когда использовать": "Present Simple используется для постоянных действий, привычек и фактов. Например: 'I code every day' или 'Neural networks process data'.",
         "как образуется": "Present Simple образуется с помощью основной формы глагола. Для he/she/it добавляется -s или -es. Например: 'I debug' → 'She debugs'.",
@@ -408,60 +581,25 @@ async def get_simple_teacher_response(question: str) -> str:
         "вопрос": "Вопросы образуются с помощью do/does. Например: 'Do you program in Python?' или 'Does the algorithm work efficiently?'",
         "примеры": "Примеры Present Simple в IT: 'I write code daily', 'She trains neural networks', 'Python supports machine learning', 'Data flows through pipelines'."
     }
-    
     question_lower = question.lower()
-    
-    # Ищем ключевые слова в вопросе
     for key, response in responses.items():
         if key in question_lower:
             return f"📚 {response}\n\nЕсли у вас есть другие вопросы, задавайте!"
-    
-    # Общий ответ если не нашли подходящий
     return ("📚 Это хороший вопрос! Present Simple - это одно из основных времен в английском языке. "
             "В программировании мы часто используем его для описания процессов: 'The algorithm processes data', 'Python executes code'. "
             "Попробуйте переформулировать вопрос более конкретно, и я постараюсь помочь!")
 
 
 async def check_writing_with_ai(text: str, task_type: str = "sentence") -> str:
-    """
-    Проверка письменного задания с помощью AI
-    """
-    check_writing_with_ai
-    print(f"[DEBUG] check_writing_with_ai вызван")
-    print(f"[DEBUG] Текст пользователя: '{text}'")
-    print(f"[DEBUG] OPENAI_AVAILABLE = {OPENAI_AVAILABLE}")
-    
+    """Проверяет письменный текст с помощью AI."""
     if not OPENAI_AVAILABLE:
-        print("[DEBUG] Используется fallback — simple_writing_check")
-        # Fallback к простой проверке
         return await simple_writing_check(text, task_type)
-    
     try:
-        # Системный промпт для проверки письма
         if task_type == "sentence":
-            system_prompt = """Ты - учитель английского языка. Проверь предложение студента на грамматические ошибки, стиль и соответствие заданию. 
-
-Дай конструктивную обратную связь на русском языке:
-- Если ошибок нет: похвали и кратко прокомментируй
-- Если есть ошибки: укажи их и предложи исправления
-- Будь конструктивным и мотивирующим
-
-Особое внимание уделяй IT терминологии и техническому контексту."""
+            system_prompt = """Ты - учитель английского языка. Проверь предложение студента на грамматические ошибки, стиль и соответствие заданию. Дай конструктивную обратную связь на русском. Особое внимание уделяй IT контексту."""
         else:  # translation
-            system_prompt = """Ты - учитель английского языка. Проверь перевод студента с русского на английский.
-
-Дай обратную связь на русском языке:
-- Оцени правильность перевода
-- Укажи грамматические ошибки если есть
-- Предложи более точный вариант если нужно
-- Будь конструктивным и поддерживающим
-
-Контекст: IT терминология, программирование, Data Science."""
-        
-        # Создаем клиент OpenAI
-        client = openai.AsyncOpenAI(api_key=OPENAI_API_KEY)
-        
-        # Отправляем запрос
+            system_prompt = """Ты - учитель английского языка. Проверь перевод студента с русского на английский. Оцени правильность перевода, укажи ошибки и предложи исправления на русском. Контекст: IT терминология."""
+        client = AsyncOpenAI(api_key=OPENAI_API_KEY)
         response = await client.chat.completions.create(
             model="gpt-4o-mini",
             messages=[
@@ -471,64 +609,41 @@ async def check_writing_with_ai(text: str, task_type: str = "sentence") -> str:
             max_tokens=300,
             temperature=0.3
         )
-        
-        return f"👨‍🏫 **Обратная связь учителя:**\n\n{response.choices[0].message.content}"
-        
+        return f"👨‍🏫 <b>Обратная связь учителя:</b>\n\n{response.choices[0].message.content}"
     except Exception as e:
         print(f"Ошибка AI проверки письма: {e}")
         return await simple_writing_check(text, task_type)
 
 
 async def simple_writing_check(text: str, task_type: str = "sentence") -> str:
-    """
-    Простая проверка письма (fallback)
-    """
+    """Простая (заглушечная) проверка письменного текста."""
     if task_type == "sentence":
         if len(text.split()) >= 3:
-            return ("👨‍🏫 **Хорошая работа!** \n\n"
-                   "Ваше предложение составлено правильно. "
-                   "Продолжайте практиковаться с техническими терминами!")
+            return ("👨‍🏫 <b>Хорошая работа!</b> \n\n"
+                    "Ваше предложение составлено правильно. "
+                    "Продолжайте практиковаться с техническими терминами!")
         else:
-            return ("👨‍🏫 **Можно лучше!** \n\n"
-                   "Попробуйте составить более развернутое предложение. "
-                   "Добавьте больше деталей о том, как используется этот термин в IT.")
+            return ("👨‍🏫 <b>Можно лучше!</b> \n\n"
+                    "Попробуйте составить более развернутое предложение. "
+                    "Добавьте больше деталей о том, как используется этот термин в IT.")
     else:  # translation
         if len(text.split()) >= 4:
-            return ("👨‍🏫 **Отличный перевод!** \n\n"
-                   "Ваш перевод выглядит грамотно. "
-                   "Хорошее владение технической лексикой!")
+            return ("👨‍🏫 <b>Отличный перевод!</b> \n\n"
+                    "Ваш перевод выглядит грамотно. "
+                    "Хорошее владение технической лексикой!")
         else:
-            return ("👨‍🏫 **Неплохо, но можно улучшить!** \n\n"
-                   "Попробуйте сделать перевод более полным и точным. "
-                   "Обратите внимание на технические термины.")
+            return ("👨‍🏫 <b>Неплохо, но можно улучшить!</b> \n\n"
+                    "Попробуйте сделать перевод более полным и точным. "
+                    "Обратите внимание на технические термины.")
 
 
 async def analyze_speaking_with_ai(audio_text: str, topic: str) -> str:
-    """
-    Анализ устной речи с помощью AI
-    """
+    """Анализирует устное высказывание с помощью AI."""
     if not OPENAI_AVAILABLE:
-        # Fallback к простому анализу
         return await simple_speaking_analysis(audio_text, topic)
-    
     try:
-        # Системный промпт для анализа речи
-        system_prompt = """Ты - опытный преподаватель английского языка, специализирующийся на обучении программистов и IT специалистов.
-
-Проанализируй устное высказывание студента на английском языке и дай подробную обратную связь на русском языке:
-
-1. Оцени соответствие теме
-2. Укажи на грамматические ошибки (если есть)
-3. Прокомментируй использование технической лексики
-4. Дай советы по улучшению
-5. Похвали за хорошие моменты
-
-Будь конструктивным, поддерживающим и мотивирующим. Фокусируйся на IT контексте."""
-        
-        # Создаем клиент OpenAI
-        client = openai.AsyncOpenAI(api_key=OPENAI_API_KEY)
-        
-        # Отправляем запрос
+        system_prompt = """Ты - опытный преподаватель английского языка, специализирующийся на обучении программистов. Проанализируй устное высказывание студента и дай подробную обратную связь на русском: оцени соответствие теме, укажи грамматические ошибки, прокомментируй использование технической лексики, дай советы по улучшению. Будь конструктивным и мотивирующим. Фокусируйся на IT контексте."""
+        client = AsyncOpenAI(api_key=OPENAI_API_KEY)
         response = await client.chat.completions.create(
             model="gpt-4o-mini",
             messages=[
@@ -538,49 +653,35 @@ async def analyze_speaking_with_ai(audio_text: str, topic: str) -> str:
             max_tokens=400,
             temperature=0.4
         )
-        
-        return f"🎙️ **Анализ вашего высказывания:**\n\n{response.choices[0].message.content}"
-        
+        return f"🎙️ <b>Анализ вашего высказывания:</b>\n\n{response.choices[0].message.content}"
     except Exception as e:
         print(f"Ошибка AI анализа речи: {e}")
         return await simple_speaking_analysis(audio_text, topic)
 
 
 async def simple_speaking_analysis(audio_text: str, topic: str) -> str:
-    """
-    Простой анализ речи (fallback)
-    """
+    """Простой (заглушечная) анализ устного высказывания."""
     if len(audio_text) > 50:
-        return ("🎙️ **Отличная работа!**\n\n"
-               "Вы хорошо раскрыли тему и показали уверенное владение английским языком в IT контексте. "
-               "Продолжайте практиковаться - ваши навыки говорения развиваются!\n\n"
-               "💡 **Совет:** Попробуйте использовать больше технических терминов в следующих высказываниях.")
+        return ("🎙️ <b>Отличная работа!</b>\n\n"
+                "Вы хорошо раскрыли тему и показали уверенное владение английским языком в IT контексте. "
+                "Продолжайте практиковаться - ваши навыки говорения развиваются!\n\n"
+                "💡 <b>Совет:</b> Попробуйте использовать больше технических терминов в следующих высказываниях.")
     else:
-        # Если текст короткий, возможно, распознавание не сработало
-        return ("🎙️ **Хорошая попытка!**\n\n"
-               "Я не смог полностью распознать ваше высказывание, но вы молодец, что практикуете устную речь! "
-               "Это очень важно для развития разговорных навыков в IT среде.\n\n"
-               "💡 **Совет:** Говорите чуть громче и четче для лучшего распознавания.")
+        return ("🎙️ <b>Хорошая попытка!</b>\n\n"
+                "Я не смог полностью распознать ваше высказывание, но вы молодец, что практикуете устную речь! "
+                "Это очень важно для развития разговорных навыков в IT среде.\n\n"
+                "💡 <b>Совет:</b> Говорите чуть громче и четче для лучшего распознавания.")
 
 
 async def transcribe_audio_simple(audio_path: str) -> str:
-    """
-    Транскрипция аудио файла с использованием Whisper API
-    """
+    """Транскрибирует аудио в текст с использованием OpenAI Whisper API."""
     try:
-        # Проверяем, что файл существует
         if not os.path.exists(audio_path):
             raise FileNotFoundError(f"Аудио файл не найден: {audio_path}")
-        
-        # Проверяем размер файла (Whisper API имеет лимит 25MB)
-        file_size = os.path.getsize(audio_path) / (1024 * 1024)  # в MB
+        file_size = os.path.getsize(audio_path) / (1024 * 1024)
         if file_size > 25:
             raise ValueError(f"Файл слишком большой: {file_size:.1f}MB. Максимум 25MB")
-        
-        # Создаем клиент OpenAI
-        client = openai.AsyncOpenAI(api_key=OPENAI_API_KEY)
-        
-        # Открываем аудио файл и отправляем на транскрипцию
+        client = AsyncOpenAI(api_key=OPENAI_API_KEY)
         with open(audio_path, 'rb') as audio_file:
             transcript = await client.audio.transcriptions.create(
                 model="whisper-1",
@@ -589,12 +690,10 @@ async def transcribe_audio_simple(audio_path: str) -> str:
                 response_format="text",
                 temperature=0.0
             )
-        
         return transcript.strip()
-        
     except Exception as e:
         print(f"Ошибка при транскрипции: {e}")
-        # Fallback к заглушке
+        # Возвращаем случайный ответ при ошибке API или отсутствии API ключа
         sample_responses = [
             "I think programming is very important skill for future. Python is my favorite language because it simple and powerful.",
             "Machine learning help us solve complex problems. I use TensorFlow for my projects and it work very good.",
@@ -606,33 +705,14 @@ async def transcribe_audio_simple(audio_path: str) -> str:
 
 
 async def transcribe_telegram_audio(bot, file_id: str) -> str:
-    """
-    Транскрипция аудио сообщения из aiogram бота
-    
-    Args:
-        bot: экземпляр aiogram бота
-        file_id: ID файла из Telegram (voice.file_id или audio.file_id)
-    
-    Returns:
-        str: расшифрованный текст
-    """
+    """Загружает аудио из Telegram и транскрибирует его."""
     try:
-        # Получаем информацию о файле из Telegram
         file = await bot.get_file(file_id)
-        
-        # Создаем временный файл
         with tempfile.NamedTemporaryFile(delete=False, suffix='.ogg') as temp_file:
-            # Скачиваем файл из Telegram для aiogram
             await bot.download_file(file.file_path, temp_file.name)
-            
-            # Транскрибируем
             result = await transcribe_audio_simple(temp_file.name)
-            
-            # Удаляем временный файл
-            os.unlink(temp_file.name)
-            
+            os.unlink(temp_file.name)  # Удаляем временный файл
             return result
-            
     except Exception as e:
         print(f"Ошибка при обработке Telegram аудио: {e}")
         return "Ошибка: не удалось обработать аудио сообщение"
@@ -640,27 +720,19 @@ async def transcribe_telegram_audio(bot, file_id: str) -> str:
 
 async def handle_voice_message(message: types.Message):
     """
-    Обработчик голосовых сообщений в aiogram боте
+    Обработчик голосовых сообщений.
+    Эта функция находится здесь, но в реальном приложении должна вызываться из роутера.
     """
     try:
-        # Получаем голосовое сообщение
         voice = message.voice
-        
-        # Транскрибируем
         transcribed_text = await transcribe_telegram_audio(message.bot, voice.file_id)
-        
-        # Отправляем на анализ (ваша существующая функция)
-        topic = "General IT Discussion"  # или получите тему из контекста
+        topic = "Общие рассуждения об IT"  # Можно сделать тему динамической
         analysis = await analyze_speaking_with_ai(transcribed_text, topic)
-        
-        # Отправляем результат пользователю
         await message.reply(analysis)
-        
     except Exception as e:
         await message.reply("Извините, произошла ошибка при обработке вашего сообщения.")
         print(f"Ошибка в обработчике голосовых сообщений: {e}")
 
 
-
-# Глобальный экземпляр для отслеживания прогресса
+# Создаем экземпляр класса UserProgress для отслеживания прогресса пользователей
 user_progress = UserProgress()

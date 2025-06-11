@@ -6,7 +6,7 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.utils.keyboard import InlineKeyboardBuilder
-from config import AVAILABLE_VOICES # Импортируем из config
+
 
 def get_start_keyboard():
     """Стартовая клавиатура"""
@@ -35,6 +35,8 @@ def get_pronunciation_keyboard():
     """Клавиатура для блока произношения"""
     keyboard = InlineKeyboardBuilder()
     keyboard.button(text="Записать произношение 🎤", callback_data="record_pronunciation")
+    # Новая кнопка: сказать медленнее
+    keyboard.button(text="Сказать медленнее 🐢", callback_data="slow_down_pronunciation")
     keyboard.button(text="Пропустить ⏭️", callback_data="skip_pronunciation")
     keyboard.adjust(1)
     return keyboard.as_markup()
@@ -44,9 +46,11 @@ def get_pronunciation_result_keyboard():
     """Клавиатура после проверки произношения"""
     keyboard = InlineKeyboardBuilder()
     keyboard.button(text="Дальше ➡️", callback_data="next_pronunciation")
-    # Удалена кнопка "Пропустить" для произношения, так как она может быть избыточна после подробного анализа
-    # keyboard.button(text="Пропустить ⏭️", callback_data="skip_pronunciation")
-    keyboard.adjust(1)
+    keyboard.button(text="Пропустить ⏭️", callback_data="skip_pronunciation")
+    # Новая кнопка: повторить слово/фразу
+    keyboard.button(text="Повторить 🔁", callback_data="repeat_pronunciation")
+    keyboard.adjust(
+        2)  # adjust(2) оставит "Повторить" на отдельной строке, если хотите все 3 в ряд, используйте adjust(3)
     return keyboard.as_markup()
 
 
@@ -83,7 +87,6 @@ def get_main_menu_keyboard():
     """Главное меню бота"""
     keyboard = InlineKeyboardBuilder()
     keyboard.button(text="📚 Начать урок", callback_data="start_lesson")
-    keyboard.button(text="⚙️ Настройки", callback_data="settings_menu") # Новая кнопка
     keyboard.button(text="📖 Термины", callback_data="menu_terms")
     keyboard.button(text="🗣️ Произношение", callback_data="menu_pronunciation")
     keyboard.button(text="📝 Лексика", callback_data="menu_lexical")
@@ -93,7 +96,7 @@ def get_main_menu_keyboard():
     keyboard.button(text="✍️ Письмо", callback_data="menu_writing")
     keyboard.button(text="💬 Говорение", callback_data="menu_speaking")
     keyboard.button(text="🔄 Перезапуск", callback_data="restart_lesson")
-    keyboard.adjust(1, 1, 2, 2, 2, 2, 2, 1) # Адаптируем расположение
+    keyboard.adjust(1, 2, 2, 2, 2, 2, 1)
     return keyboard.as_markup()
 
 
@@ -104,6 +107,7 @@ def get_block_menu_keyboard():
     keyboard.button(text="📚 Продолжить урок", callback_data="continue_lesson")
     keyboard.adjust(2)
     return keyboard.as_markup()
+
 
 def get_mchoice_keyboard(options: list, question_index: int = 0):
     """Клавиатура для множественного выбора"""
@@ -187,6 +191,7 @@ def get_speaking_result_keyboard():
     keyboard.adjust(1)
     return keyboard.as_markup()
 
+
 def get_word_build_keyboard(parts: list, collected: str = ""):
     """
     Клавиатура с частями слова для упражнения на сборку.
@@ -206,6 +211,7 @@ def get_word_build_keyboard(parts: list, collected: str = ""):
 
     return kb.as_markup()
 
+
 def get_final_keyboard():
     """Финальная клавиатура курса"""
     keyboard = InlineKeyboardBuilder()
@@ -219,29 +225,4 @@ def get_continue_keyboard():
     """Кнопка 'Продолжить' после ответа"""
     keyboard = InlineKeyboardBuilder()
     keyboard.button(text="Продолжить ➡️", callback_data="continue_exercise")
-    return keyboard.as_markup()
-
-def get_voice_selection_keyboard(current_voice: str):
-    """
-    Клавиатура для выбора голоса TTS.
-    Показывает текущий голос и предлагает другие варианты.
-    """
-    keyboard = InlineKeyboardBuilder()
-    voices_to_display = list(AVAILABLE_VOICES.keys())
-
-    for voice_name in voices_to_display:
-        text = voice_name
-        if voice_name == current_voice:
-            text += " (Текущий)"
-        keyboard.button(text=text, callback_data=f"select_voice_{voice_name}")
-    keyboard.button(text="⬅️ Назад в настройки", callback_data="back_to_settings")
-    keyboard.adjust(1) # По одной кнопке в ряд для выбора голоса
-    return keyboard.as_markup()
-
-def get_settings_menu_keyboard():
-    """Клавиатура меню настроек"""
-    keyboard = InlineKeyboardBuilder()
-    keyboard.button(text="🗣️ Выбрать голос TTS", callback_data="select_tts_voice")
-    keyboard.button(text="⬅️ Назад в Главное меню", callback_data="main_menu")
-    keyboard.adjust(1)
     return keyboard.as_markup()

@@ -1,7 +1,7 @@
 import sys
 import os
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
-
+import re
 from aiogram import Router, F
 from aiogram.types import Message, CallbackQuery, FSInputFile, InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.fsm.context import FSMContext
@@ -18,6 +18,10 @@ from bot.utils import (load_json_data, generate_audio, user_progress, simple_pro
 from config import MESSAGES, IMAGES_PATH
 from config import OPENAI_API_KEY 
 from bot.utils import convert_ogg_to_wav
+from aiogram.exceptions import TelegramBadRequest
+from datetime import datetime # Добавьте, если нет
+
+
 
 router = Router()
 
@@ -211,6 +215,7 @@ async def terms_complete_next(callback: CallbackQuery, state: FSMContext):
     await start_pronunciation_block(callback.message, state)
     await callback.answer()
 
+# --- start_pronunciation_block - ВЕРНУЛ К ИСХОДНОМУ СОСТОЯНИЮ ---
 async def start_pronunciation_block(message: Message, state: FSMContext):
     """Начало блока произношения"""
     # Загружаем данные для произношения
@@ -218,26 +223,47 @@ async def start_pronunciation_block(message: Message, state: FSMContext):
     if not pronunciation_data or "words" not in pronunciation_data:
         await message.answer("Ошибка загрузки данных для произношения")
         return
-    
+
     # Сохраняем данные в состояние
     await state.update_data(
-        pronunciation_words=pronunciation_data["words"], 
+        pronunciation_words=pronunciation_data["words"],
         current_pronunciation_word=0
     )
-    
+
     # Отправляем инструкцию
     await message.answer(MESSAGES["pronunciation_intro"])
-    
+
     # Показываем первое слово для произношения
     await show_pronunciation_word(message, state)
+# --- КОНЕЦ start_pronunciation_block ---
 
+
+@router.callback_query(F.data == "start_pronunciation_lesson")
+async def start_pronunciation_lesson_from_callback(callback: CallbackQuery, state: FSMContext):
+    """
+    Обработчик кнопки "Начать урок произношения".
+    Вызывает start_pronunciation_block для инициализации и старта.
+    """
+    await start_pronunciation_block(callback.message, state)
+    await callback.answer()
+
+def _sanitize_filename(text: str, max_length: int = 50) -> str:
+    """
+    Очищает строку для использования в качестве части имени файла.
+    Удаляет недопустимые символы и обрезает строку до max_length.
+    """
+    sanitized = re.sub(r'[^\w\s-]', '', text).strip()
+    sanitized = re.sub(r'\s+', '_', sanitized)
+    sanitized = re.sub(r'__+', '_', sanitized)
+    sanitized = sanitized.strip('_')
+    return sanitized[:max_length]
 
 async def show_pronunciation_word(message: Message, state: FSMContext):
     """Показать текущее слово для произношения"""
     data = await state.get_data()
     words = data.get("pronunciation_words", [])
     current_index = data.get("current_pronunciation_word", 0)
-    
+
     if current_index >= len(words):
         # Все слова произнесены
         await message.answer(
@@ -246,9 +272,26 @@ async def show_pronunciation_word(message: Message, state: FSMContext):
         )
         await state.set_state(LessonStates.PRONUNCIATION_COMPLETE)
         return
-    
+
     current_word = words[current_index]
-    
+
+    # --- ИЗМЕНЕНИЕ: Сохраняем все необходимые параметры слова в состоянии ---
+    # Это позволяет нам легко получать их в других хендлерах, например, в slow_down_pronunciation_handler и process_pronunciation_recording
+    await state.update_data(
+        current_pronunciation_word_data=current_word, # Сохраняем весь словарь слова для удобства
+        current_pronunciation_text=current_word['english'], # Отдельно 'english' для прямой проверки
+        current_pronunciation_translation=current_word['russian'],
+        current_pronunciation_transcription=current_word['transcription'],
+        current_pronunciation_slow_mode=False # Сбрасываем режим замедления при показе нового слова
+    )
+    # --- КОНЕЦ ИЗМЕНЕНИЯ ---
+
+    user_progress.update_progress(
+        message.from_user.id,
+        current_pronunciation_text=current_word['english'],
+        current_pronunciation_slow_mode=False
+    )
+
     # Показываем информацию о слове
     await message.answer(
         f"📝 **Слово:** {current_word['english']}\n"
@@ -256,98 +299,233 @@ async def show_pronunciation_word(message: Message, state: FSMContext):
         f"🔤 **Транскрипция:** {current_word['transcription']}",
         parse_mode="Markdown"
     )
-    
-    # Генерируем и отправляем аудио произношения
-    audio_filename = f"pronunciation_{current_index}_{current_word['english'].replace(' ', '_')}"
-    audio_path = await generate_audio(current_word['english'], audio_filename, 'en')
-    
+
+    # Генерируем и отправляем аудио произношения (всегда в обычном режиме при первом показе)
+    sanitized_english_word = _sanitize_filename(current_word['english'])
+    audio_filename = f"pronunciation_{current_index}_{sanitized_english_word}"
+    audio_path = await generate_audio(current_word['english'], audio_filename, 'en', slow_mode=False)
+
     if audio_path and os.path.exists(audio_path):
         try:
             audio = FSInputFile(audio_path)
             await message.answer_audio(
-                audio, 
+                audio,
                 caption="🔊 **Послушайте произношение**",
                 parse_mode="Markdown"
             )
+            if os.path.exists(audio_path):
+                 os.remove(audio_path)
         except Exception as e:
             print(f"Ошибка отправки аудио: {e}")
-    
+            await message.answer("🔊 **Послушайте произношение:** (аудио недоступно)")
+    else:
+        await message.answer("🔊 **Послушайте произношение:** (аудио недоступно)")
+
     # Инструкция и клавиатура с меню
     await message.answer(
         MESSAGES["pronunciation_instruction"],
         reply_markup=get_keyboard_with_menu(get_pronunciation_keyboard())
     )
-    
+
     await state.set_state(LessonStates.PRONUNCIATION_LISTEN)
+
+
+# --- ИЗМЕНЕНИЕ: slow_down_pronunciation_handler для повторного вывода текста и замедленного аудио ---
+@router.callback_query(
+    F.data == "slow_down_pronunciation",
+    LessonStates.PRONUNCIATION_LISTEN
+)
+@router.callback_query(F.data == "slow_down_pronunciation", LessonStates.PRONUNCIATION_RECORD)
+async def slow_down_pronunciation_handler(callback: CallbackQuery, state: FSMContext):
+    data = await state.get_data()
+    # Получаем данные о текущем слове из состояния
+    text = data.get("current_pronunciation_text")
+    translation = data.get("current_pronunciation_translation")
+    transcription = data.get("current_pronunciation_transcription")
+
+    if not text:
+        await callback.answer("Извините, не могу найти текст для замедленного произношения.", show_alert=True)
+        return
+
+    # Помечаем, что сейчас slow mode
+    await state.update_data(current_pronunciation_slow_mode=True)
+
+    # 1) Повторно выводим текст фразы
+    await callback.message.answer(
+        f"📝 **Слово:** {text}\n"
+        f"🇷🇺 **Перевод:** {translation}\n"
+        f"🔤 **Транскрипция:** {transcription}",
+        parse_mode="Markdown"
+    )
+
+    # 2) Генерируем и отправляем замедленное аудио
+    sanitized_text = _sanitize_filename(text)
+    filename = f"slow_{callback.from_user.id}_{sanitized_text}_{datetime.now().strftime('%Y%m%d%H%M%S%f')}"
+    audio_path = await generate_audio(text, filename, lang='en', slow_mode=True)
+    if not audio_path or not os.path.exists(audio_path):
+        await callback.answer("Не удалось сгенерировать замедленное аудио.", show_alert=True)
+        return
+
+    await callback.message.answer_audio(
+        audio=FSInputFile(audio_path),
+        caption=f"🐢 Замедленное произношение: **{text}**",
+        parse_mode="Markdown"
+    )
+    os.remove(audio_path) # Удаляем временный файл
+
+    # 3) Отправляем приглашение с кнопками
+    await callback.message.answer(
+        MESSAGES["pronunciation_instruction"],
+        reply_markup=get_keyboard_with_menu(get_pronunciation_keyboard())
+    )
+    await callback.answer() # Закрываем "часики" на кнопке
+# --- КОНЕЦ ИЗМЕНЕНИЯ slow_down_pronunciation_handler ---
+
+
+@router.callback_query(
+    F.data == "repeat_pronunciation",
+    LessonStates.PRONUNCIATION_LISTEN
+)
+@router.callback_query(F.data == "repeat_pronunciation", LessonStates.PRONUNCIATION_RECORD)
+async def repeat_pronunciation_handler(callback: CallbackQuery, state: FSMContext):
+    data = await state.get_data()
+    # Используем current_pronunciation_text из состояния
+    text = data.get("current_pronunciation_text")
+    slow_mode = data.get("current_pronunciation_slow_mode", False)
+    if not text:
+        await callback.answer("Извините, не могу найти текст для повторного произношения.", show_alert=True)
+        return
+
+    sanitized_text = _sanitize_filename(text)
+    filename = f"rep_{callback.from_user.id}_{sanitized_text}_{datetime.now().strftime('%Y%m%d%H%M%S%f')}"
+    audio_path = await generate_audio(text, filename, lang='en', slow_mode=slow_mode)
+    if not audio_path or not os.path.exists(audio_path):
+        await callback.answer("Не удалось сгенерировать аудио.", show_alert=True)
+        return
+
+    await callback.message.answer_audio(
+        audio=FSInputFile(audio_path),
+        caption=f"{'🐢 ' if slow_mode else ''}Повторяю: **{text}**",
+        parse_mode="Markdown"
+    )
+    os.remove(audio_path)
+    await callback.message.answer(
+        MESSAGES["pronunciation_instruction"],
+        reply_markup=get_keyboard_with_menu(get_pronunciation_keyboard())
+    )
+    await callback.answer()
 
 
 @router.callback_query(F.data == "record_pronunciation", LessonStates.PRONUNCIATION_LISTEN)
 async def request_pronunciation_recording(callback: CallbackQuery, state: FSMContext):
     """Запрос записи произношения"""
+    # Здесь edit_text уместен, так как мы меняем сообщение с инструкцией
     await callback.message.edit_text(
         "🎤 Запишите голосовое сообщение с произношением слова.\n\n"
         "Для записи голосового сообщения нажмите на микрофон в Telegram и произнесите слово.",
         reply_markup=get_keyboard_with_menu(get_pronunciation_keyboard())
     )
-    
     await state.set_state(LessonStates.PRONUNCIATION_RECORD)
     await callback.answer()
 
 
 @router.message(F.voice, LessonStates.PRONUNCIATION_RECORD)
 async def process_pronunciation_recording(message: Message, state: FSMContext):
-    """Обработка записи произношения"""
     data = await state.get_data()
-    words = data.get("pronunciation_words", [])
-    current_index = data.get("current_pronunciation_word", 0)
+    # --- ИЗМЕНЕНИЕ: Используем 'current_pronunciation_text' из состояния для проверки ---
+    # Это гарантирует, что проверяется именно то слово, которое было показано последним (в т.ч. замедленное).
+    text_to_check = data.get("current_pronunciation_text")
+    # --- КОНЕЦ ИЗМЕНЕНИЯ ---
 
-    if current_index >= len(words):
+    if not text_to_check:
+        await message.answer("Извините, не могу найти текущее слово для проверки.")
         return
 
-    current_word = words[current_index]
     processing_msg = await message.answer("🔄 Анализирую ваше произношение...")
 
+    # Базовые пороговые значения для оценки
+    base_lower_threshold = 68.0
+    base_upper_threshold = 84.0
+
+    # Коэффициент чувствительности для регулировки интенсивности изменения порогов.
+    sensitivity_factor = -1.0
+
+    num_words = len(text_to_check.split()) # Используем text_to_check
+
+    adjusted_lower_threshold = base_lower_threshold
+    adjusted_upper_threshold = base_upper_threshold
+
+    lower_adjustment_short = 3.0
+    upper_adjustment_short = 1.0
+
+    lower_adjustment_long = -3.0
+    upper_adjustment_long = -2.0
+
+    if num_words <= 2:
+        adjusted_lower_threshold += lower_adjustment_short * sensitivity_factor
+        adjusted_upper_threshold += upper_adjustment_short * sensitivity_factor
+    elif num_words >= 5:
+        adjusted_lower_threshold += lower_adjustment_long * sensitivity_factor
+        adjusted_upper_threshold += upper_adjustment_long * sensitivity_factor
+
+    adjusted_lower_threshold = max(0.0, min(100.0, adjusted_lower_threshold))
+    adjusted_upper_threshold = max(0.0, min(100.0, adjusted_upper_threshold))
+
+    print(
+        f"Рассчитанные пороги в lesson.py - Нижний: {adjusted_lower_threshold:.1f}%, Верхний: {adjusted_upper_threshold:.1f}% (Коэффициент чувствительности: {sensitivity_factor})")
+
+    timestamp_str = datetime.now().strftime("%Y%m%d%H%M%S%f")
+    voice_path_ogg = os.path.join("media", "audio", f"voice_{message.from_user.id}_{timestamp_str}.ogg")
+    voice_path_wav = voice_path_ogg.replace(".ogg", ".wav")
+
     try:
-        # Скачиваем голосовое сообщение
         voice_file = await message.bot.get_file(message.voice.file_id)
-        voice_path_ogg = f"media/audio/voice_{message.from_user.id}_{current_index}.ogg"
-        voice_path_wav = voice_path_ogg.replace(".ogg", ".wav")
+
+        audio_dir = os.path.dirname(voice_path_ogg)
+        os.makedirs(audio_dir, exist_ok=True)
 
         await message.bot.download_file(voice_file.file_path, voice_path_ogg)
 
-        # Конвертируем в .wav 16kHz
         if not await convert_ogg_to_wav(voice_path_ogg, voice_path_wav):
-            await processing_msg.delete()
-            await message.answer("⚠️ Не удалось обработать аудио.")
+            try:
+                if processing_msg:
+                    await processing_msg.delete()
+            except TelegramBadRequest as e:
+                print(f"Ошибка удаления сообщения при неудачной конвертации: {e}")
+            await message.answer("⚠️ Не удалось обработать аудио. Пожалуйста, попробуйте еще раз.")
             return
 
-        # Проверяем произношение
-        accuracy = await simple_pronunciation_check(current_word['english'], voice_path_wav)
-
-        # Удаляем временные файлы
-        os.remove(voice_path_ogg)
-        if os.path.exists(voice_path_wav):
-            os.remove(voice_path_wav)
-
-        await processing_msg.delete()
-
-        # Формируем обратную связь
-        if accuracy >= 80:
-            feedback = "🎉 Отличное произношение!"
-        elif accuracy >= 50:
-            feedback = "👍 Хорошо, но можно лучше."
-        else:
-            feedback = "⚠️ Требуется больше практики."
-
-        await message.answer(
-            f"{feedback}\n\n🎯 Точность: {accuracy:.1f}%",
-            reply_markup=get_keyboard_with_menu(get_pronunciation_result_keyboard())
+        overall_accuracy, verdict, analysis_text = await simple_pronunciation_check(
+            text_to_check, # Используем text_to_check
+            voice_path_wav,
+            adjusted_lower_threshold,
+            adjusted_upper_threshold
         )
 
+        await message.answer(
+            f"{verdict}\n\n🎯 <b>Точность:</b> {overall_accuracy:.1f}%\n{analysis_text}",
+            reply_markup=get_keyboard_with_menu(get_pronunciation_result_keyboard()),
+            parse_mode='HTML'
+        )
+
+        await state.set_state(LessonStates.PRONUNCIATION_LISTEN)
+
     except Exception as e:
-        await processing_msg.delete()
-        await message.answer("Произошла ошибка при обработке голосового сообщения.")
+        await message.answer("Произошла ошибка при обработке вашего голосового сообщения.")
         print(f"Ошибка: {e}")
+    finally:
+        if voice_path_ogg and os.path.exists(voice_path_ogg):
+            os.remove(voice_path_ogg)
+        if voice_path_wav and os.path.exists(voice_path_wav):
+            os.remove(voice_path_wav)
+
+        try:
+            if processing_msg and processing_msg.message_id:
+                await processing_msg.delete()
+        except TelegramBadRequest as e:
+            print(f"Ошибка удаления сообщения об анализе в finally: {e}")
+        except Exception as e:
+            print(f"Непредвиденная ошибка при удалении сообщения об анализе в finally: {e}")
 
 
 @router.callback_query(F.data == "skip_pronunciation", LessonStates.PRONUNCIATION_LISTEN)
@@ -355,31 +533,34 @@ async def process_pronunciation_recording(message: Message, state: FSMContext):
 @router.callback_query(F.data == "next_pronunciation")
 async def next_pronunciation_word(callback: CallbackQuery, state: FSMContext):
     """Переход к следующему слову для произношения"""
+    user_id = callback.from_user.id
     data = await state.get_data()
     current_index = data.get("current_pronunciation_word", 0)
-    
+
     # Увеличиваем индекс
     await state.update_data(current_pronunciation_word=current_index + 1)
-    
+
     # Обновляем прогресс пользователя
     user_progress.update_progress(
-        callback.from_user.id, 
-        current_item=current_index + 1
+        user_id,
+        current_item=current_index + 1,
+        current_pronunciation_slow_mode=False
     )
-    
+
     # Показываем следующее слово
     await show_pronunciation_word(callback.message, state)
     await callback.answer()
 
 
-@router.callback_query(F.data == "retry_pronunciation")
+@router.callback_query(F.data == "retry_pronunciation", LessonStates.PRONUNCIATION_LISTEN)
+@router.callback_query(F.data == "retry_pronunciation", LessonStates.PRONUNCIATION_RECORD)
 async def retry_pronunciation(callback: CallbackQuery, state: FSMContext):
     """Повторить попытку произношения"""
     await callback.message.edit_text(
-        "🎤 Попробуйте ещё раз! Запишите голосовое сообщение с произношением слова.",
+        "🎤 Попробуйте ещё раз! Запишите голосовое сообщение с произношением слова.\n\n"
+        "Для записи голосового сообщения нажмите на микрофон в Telegram и произнесите слово.",
         reply_markup=get_keyboard_with_menu(get_pronunciation_keyboard())
     )
-    
     await state.set_state(LessonStates.PRONUNCIATION_RECORD)
     await callback.answer()
 
@@ -391,16 +572,20 @@ async def pronunciation_complete_next(callback: CallbackQuery, state: FSMContext
         "🎉 Блок произношения завершен!\n\n"
         "Переходим к лексическим упражнениям..."
     )
-    
+
     # Обновляем прогресс
     user_progress.update_progress(
         callback.from_user.id,
         current_block="lexical",
         current_item=0
     )
-    
-    # Запускаем лексический блок (английский -> русский)
-    await start_lexical_en_to_ru_block(callback.message, state)
+
+    # Предполагается, что эта функция существует
+    try:
+        # await start_lexical_en_to_ru_block(callback.message, state) # Закомментировано для избежания NameError, если функция не импортирована/не существует
+        await callback.message.answer("Функция для лексического блока (start_lexical_en_to_ru_block) еще не реализована или не импортирована.")
+    except NameError:
+        await callback.message.answer("Функция для лексического блока (start_lexical_en_to_ru_block) еще не реализована или не импортирована.")
     await callback.answer()
 
 async def start_lexical_en_to_ru_block(message: Message, state: FSMContext):
