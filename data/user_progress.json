@@ -46,7 +46,7 @@
                 "transcription": "/əbˈdʒɛkt dɪˈtɛkʃən/"
             }
         ],
-        "current_pronunciation_text": "analyze"
+        "current_pronunciation_text": "a black cat sat on a mat"
     },
     "1261714822": {
         "current_block": "terms",
@@ -58,6 +58,13 @@
     "113159302": {
         "current_block": "lexico_grammar",
         "current_item": 0,
+        "completed_items": [],
+        "current_pronunciation_slow_mode": false,
+        "current_pronunciation_data": null
+    },
+    "788612747": {
+        "current_block": "terms",
+        "current_item": 1,
         "completed_items": [],
         "current_pronunciation_slow_mode": false,
         "current_pronunciation_data": null

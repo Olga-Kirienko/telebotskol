@@ -156,7 +156,7 @@ async def show_current_term(message: Message, state: FSMContext):
     if audio_path and os.path.exists(audio_path):
         try:
             audio = FSInputFile(audio_path)
-            await message.answer_audio(
+            await message.answer_voice(
                 audio, 
                 caption="🔊 **Произношение**",
                 parse_mode="Markdown"
@@ -308,7 +308,7 @@ async def show_pronunciation_word(message: Message, state: FSMContext):
     if audio_path and os.path.exists(audio_path):
         try:
             audio = FSInputFile(audio_path)
-            await message.answer_audio(
+            await message.answer_voice(
                 audio,
                 caption="🔊 **Послушайте произношение**",
                 parse_mode="Markdown"
@@ -347,10 +347,45 @@ async def slow_down_pronunciation_handler(callback: CallbackQuery, state: FSMCon
         await callback.answer("Извините, не могу найти текст для замедленного произношения.", show_alert=True)
         return
 
-    # Помечаем, что сейчас slow mode
+    # Помечаем, что сейчас slow mode (полезно для отслеживания, но не критично для работы)
     await state.update_data(current_pronunciation_slow_mode=True)
 
-    # 1) Повторно выводим текст фразы
+    # 1) Удаляем предыдущее сообщение, чтобы избежать дублирования и повторной генерации
+    try:
+        await callback.message.delete()
+    except Exception as e:
+        print(f"Не удалось удалить исходное сообщение с кнопками: {e}")
+
+    # Отправляем временное сообщение о генерации аудио
+    processing_msg = await callback.message.answer("🔄 Генерирую и отправляю замедленное аудио...")
+
+    # 2) Генерируем замедленное аудио
+    # generate_audio уже использует text для кэширования, так что prefix можно передать как text
+    audio_path = await generate_audio(text, text, lang='en', slow_mode=True)
+
+    if not audio_path or not os.path.exists(audio_path):
+        await processing_msg.delete()  # Удаляем сообщение о процессе, если что-то пошло не так
+        await callback.answer("Не удалось сгенерировать замедленное аудио.", show_alert=True)
+        return
+
+    try:
+        # --- ВОТ ИСПРАВЛЕНИЕ: ДОБАВЛЕН 'voice=' ---
+        await callback.message.answer_voice(
+            voice=FSInputFile(audio_path),  # <--- ИСПРАВЛЕНО
+            caption=f"🐢 Замедленное произношение: **{text}**",
+            parse_mode="Markdown"
+        )
+    except Exception as e:
+        print(f"Ошибка отправки замедленного голосового сообщения: {e}")
+        await callback.message.answer("Произошла ошибка при отправке замедленной фразы.")
+
+    # Удаляем временное сообщение о процессе генерации
+    try:
+        await processing_msg.delete()
+    except Exception as e:
+        print(f"Не удалось удалить сообщение о процессе: {e}")
+
+    # 3) Повторно выводим текст фразы (после аудио)
     await callback.message.answer(
         f"📝 **Слово:** {text}\n"
         f"🇷🇺 **Перевод:** {translation}\n"
@@ -358,61 +393,87 @@ async def slow_down_pronunciation_handler(callback: CallbackQuery, state: FSMCon
         parse_mode="Markdown"
     )
 
-    # 2) Генерируем и отправляем замедленное аудио
-    sanitized_text = _sanitize_filename(text)
-    filename = f"slow_{callback.from_user.id}_{sanitized_text}_{datetime.now().strftime('%Y%m%d%H%M%S%f')}"
-    audio_path = await generate_audio(text, filename, lang='en', slow_mode=True)
-    if not audio_path or not os.path.exists(audio_path):
-        await callback.answer("Не удалось сгенерировать замедленное аудио.", show_alert=True)
-        return
-
-    await callback.message.answer_audio(
-        audio=FSInputFile(audio_path),
-        caption=f"🐢 Замедленное произношение: **{text}**",
-        parse_mode="Markdown"
-    )
-    os.remove(audio_path) # Удаляем временный файл
-
-    # 3) Отправляем приглашение с кнопками
+    # 4) Отправляем приглашение с кнопками
     await callback.message.answer(
         MESSAGES["pronunciation_instruction"],
         reply_markup=get_keyboard_with_menu(get_pronunciation_keyboard())
     )
-    await callback.answer() # Закрываем "часики" на кнопке
-# --- КОНЕЦ ИЗМЕНЕНИЯ slow_down_pronunciation_handler ---
-
-
+    await callback.answer()  # Закрываем "часики" на кнопке
+    os.remove(audio_path)
 @router.callback_query(
     F.data == "repeat_pronunciation",
     LessonStates.PRONUNCIATION_LISTEN
 )
+
+
 @router.callback_query(F.data == "repeat_pronunciation", LessonStates.PRONUNCIATION_RECORD)
+
+
 async def repeat_pronunciation_handler(callback: CallbackQuery, state: FSMContext):
     data = await state.get_data()
-    # Используем current_pronunciation_text из состояния
+
+    # Use current_pronunciation_text from state
     text = data.get("current_pronunciation_text")
+
+    # Retrieve current_pronunciation_slow_mode from state to know if we should repeat slow or normal
     slow_mode = data.get("current_pronunciation_slow_mode", False)
+
     if not text:
-        await callback.answer("Извините, не могу найти текст для повторного произношения.", show_alert=True)
+        await callback.answer("Sorry, I can't find the text to repeat.", show_alert=True)
         return
 
-    sanitized_text = _sanitize_filename(text)
-    filename = f"rep_{callback.from_user.id}_{sanitized_text}_{datetime.now().strftime('%Y%m%d%H%M%S%f')}"
-    audio_path = await generate_audio(text, filename, lang='en', slow_mode=slow_mode)
+    # Delete the previous message with buttons to avoid clutter
+    try:
+        await callback.message.delete()
+    except Exception as e:
+        print(f"Failed to delete previous message: {e}")
+
+    # Send a temporary message while generating audio
+    processing_msg = await callback.message.answer("🔄 Generating and sending audio...")
+
+    # Generate or retrieve the audio from cache
+    # The filename_prefix can simply be the text itself for better caching
+    audio_path = await generate_audio(text, text, lang='en', slow_mode=slow_mode)
+
     if not audio_path or not os.path.exists(audio_path):
-        await callback.answer("Не удалось сгенерировать аудио.", show_alert=True)
+        await processing_msg.delete()  # Remove processing message if generation fails
+        await callback.answer("Failed to generate audio.", show_alert=True)
         return
 
-    await callback.message.answer_audio(
-        audio=FSInputFile(audio_path),
-        caption=f"{'🐢 ' if slow_mode else ''}Повторяю: **{text}**",
-        parse_mode="Markdown"
-    )
-    os.remove(audio_path)
+    try:
+        # --- FIX: Changed 'audio=' to 'voice=' ---
+        # --- NO: Removed os.remove(audio_path) ---
+        await callback.message.answer_voice(
+            voice=FSInputFile(audio_path),  # <--- CORRECTED ARGUMENT NAME
+            caption=f"{'🐢 ' if slow_mode else ''}Repeating: **{text}**",
+            parse_mode="Markdown"
+        )
+
+        # --- Add path to generated_audio_paths for later cleanup ---
+        current_data = await state.get_data()
+        updated_paths = current_data.get("generated_audio_paths", [])
+        if audio_path not in updated_paths:  # Prevent duplicates if function is called multiple times
+            updated_paths.append(audio_path)
+        await state.update_data(generated_audio_paths=updated_paths)
+        # --- End of add path ---
+
+    except Exception as e:
+        print(f"Error sending voice message during repeat: {e}")
+        await callback.message.answer("An error occurred while playing the phrase.")
+
+    # Delete the temporary processing message
+    try:
+        await processing_msg.delete()
+    except Exception as e:
+        print(f"Failed to delete processing message: {e}")
+
+    # Re-send the instructions and keyboard
     await callback.message.answer(
         MESSAGES["pronunciation_instruction"],
         reply_markup=get_keyboard_with_menu(get_pronunciation_keyboard())
     )
+
+    # Always answer the callback query to remove the loading clock on the button
     await callback.answer()
 
 
@@ -1648,72 +1709,89 @@ async def missing_word_complete_next(callback: CallbackQuery, state: FSMContext)
     await start_listening_true_false(callback.message, state)
     await callback.answer()
 
+
 async def start_listening_true_false(message: Message, state: FSMContext):
     """Начало упражнений True/False для аудирования"""
-    # Загружаем данные
+    print(f"DEBUG: Entering start_listening_true_false for user {message.from_user.id}")
+
     listening_data = await load_json_data("listening_tasks_it.json")
     if not listening_data:
         await message.answer("Ошибка загрузки данных аудирования")
         return
-    
-    # Сохраняем данные в состояние
+
     await state.update_data(
         listening_true_false=listening_data,
         current_listening_tf=0,
         listening_tf_score=0
     )
-    
-    # Отправляем инструкцию
+    print(f"DEBUG: Data saved to state for user {message.from_user.id}: {await state.get_data()}")
+
     await message.answer(MESSAGES["listening_true_false_intro"])
-    
-    # Показываем первое упражнение
+
+    current_exercise = listening_data[0]
+    audio_filename = f"tf_audio_{0}_{current_exercise['phrase'][:20].replace(' ', '_')}"
+    audio_path = await generate_audio(
+        text=current_exercise['phrase'],
+        filename_prefix=audio_filename,
+        lang='en',
+        slow_mode=False
+    )
+
+    if audio_path and os.path.exists(audio_path):
+        try:
+            audio_file = FSInputFile(audio_path)
+            # --- ИЗМЕНЕНИЕ ЗДЕСЬ: используем answer_voice вместо answer_audio ---
+            await message.answer_voice(
+                audio_file,
+                caption="🎧 **Прослушайте фразу**"
+            )
+        except Exception as e:
+            print(f"Ошибка отправки первого голосового сообщения: {e}")
+            await message.answer("🎧 **Голосовое сообщение недоступно**")
+
     await show_listening_true_false(message, state)
 
+    print(
+        f"DEBUG: Exiting start_listening_true_false. Current state for user {message.from_user.id}: {await state.get_state()}")
 
 async def show_listening_true_false(message: Message, state: FSMContext):
-    """Показать упражнение True/False для аудирования"""
+    """
+    Показывает текущее упражнение True/False для аудирования (текст утверждения и кнопки).
+    Аудио отправляется отдельно в start_listening_true_false или handle_say_slower_listening.
+    """
+    print(f"DEBUG: Entering show_listening_true_false for user {message.from_user.id}")
     data = await state.get_data()
+    print(f"DEBUG: Data in show_listening_true_false: {data}")
+
     exercises = data.get("listening_true_false", [])
     current_index = data.get("current_listening_tf", 0)
-    
+
     if current_index >= len(exercises):
-        # Все упражнения выполнены
         score = data.get("listening_tf_score", 0)
         await message.answer(
             f"{MESSAGES['listening_true_false_complete']}\n\n"
             f"Ваш результат: {score}/{len(exercises)} ✨",
-            reply_markup=get_keyboard_with_menu(get_next_keyboard())
+            # reply_markup=get_keyboard_with_menu(get_next_keyboard()) # Или ваша клавиатура для завершения
         )
-        await state.set_state(LessonStates.LISTENING_TRUE_FALSE_COMPLETE)
+        await state.clear()
+        print(f"DEBUG: Listening TF complete. State cleared for user {message.from_user.id}")
         return
-    
+
     current_exercise = exercises[current_index]
-    
-    # Генерируем аудио для фразы
-    audio_filename = f"listening_tf_{current_index}_{current_exercise['phrase'][:20].replace(' ', '_')}"
-    audio_path = await generate_audio(current_exercise['phrase'], audio_filename, 'en')
-    
-    # Отправляем аудио
-    if audio_path and os.path.exists(audio_path):
-        try:
-            audio = FSInputFile(audio_path)
-            await message.answer_audio(
-                audio,
-                caption="🎧 **Прослушайте фразу**",
-                parse_mode="Markdown"
-            )
-        except Exception as e:
-            print(f"Ошибка отправки аудио: {e}")
-            await message.answer("🎧 **Аудио недоступно**")
-    
-    # Отправляем утверждение для проверки
+
+    # --- УБРАН БЛОК ГЕНЕРАЦИИ И ОТПРАВКИ АУДИО ИЗ ЭТОЙ ФУНКЦИИ ---
+    # Он теперь находится в start_listening_true_false и handle_say_slower_listening
+
+    # Отправляем утверждение и прикрепляем клавиатуру
     await message.answer(
-        f"📝 **Утверждение ({current_index + 1}/{len(exercises)}):**\n\n{current_exercise['statement']}",
+        f"📝 **Утверждение ({current_index + 1}/{len(exercises)}):**\n\n"
+        f"{current_exercise['statement']}",
         parse_mode="Markdown",
-        reply_markup=get_keyboard_with_menu(get_true_false_keyboard())
+        reply_markup=get_true_false_keyboard()  # Клавиатура с True/False и "Сказать медленнее"
     )
-    
+
     await state.set_state(LessonStates.LISTENING_TRUE_FALSE)
+    print(f"DEBUG: State set to LISTENING_TRUE_FALSE in show_listening_true_false for user {message.from_user.id}")
 
 
 @router.callback_query(F.data.startswith("listening_"), LessonStates.LISTENING_TRUE_FALSE)
@@ -1825,7 +1903,7 @@ async def show_listening_choice(message: Message, state: FSMContext):
     if audio_path and os.path.exists(audio_path):
         try:
             audio = FSInputFile(audio_path)
-            await message.answer_audio(
+            await message.answer_voice(
                 audio,
                 caption="🎧 **Прослушайте фразу 2 раза**",
                 parse_mode="Markdown"
@@ -1954,7 +2032,7 @@ async def show_listening_phrase(message: Message, state: FSMContext):
     if audio_path and os.path.exists(audio_path):
         try:
             audio = FSInputFile(audio_path)
-            await message.answer_audio(
+            await message.answer_voice(
                 audio,
                 caption="🎧 **Прослушайте фразу 2 раза**",
                 parse_mode="Markdown"
@@ -2076,6 +2154,84 @@ async def retry_phrase(callback: CallbackQuery, state: FSMContext):
     await state.set_state(LessonStates.LISTENING_PHRASES_RECORD)
     await callback.answer()
 
+
+@router.callback_query(F.data == "say_slower_listening", LessonStates.LISTENING_TRUE_FALSE)
+async def handle_say_slower_listening(callback: CallbackQuery, state: FSMContext):
+    """
+    Обработка запроса на замедленное произношение в блоке аудирования (True/False).
+    Удаляет старое сообщение с кнопками и повторно выводит текущий вопрос с аудио.
+    """
+    # Отладочный вывод для проверки состояния при вызове
+    current_state = await state.get_state()
+    print(f"DEBUG: handle_say_slower_listening called for user {callback.from_user.id}")
+    print(f"DEBUG: User's actual state: {current_state}")
+
+    # Немедленно отвечаем на CallbackQuery, чтобы избежать таймаута в Telegram
+    await callback.answer("Загружаю медленное произношение...", show_alert=False)
+
+    data = await state.get_data()
+    # Получаем данные упражнений по правильным ключам
+    exercises = data.get("listening_true_false", [])
+    current_index = data.get("current_listening_tf", 0)
+
+    # Проверяем, что данные существуют и индекс в пределах
+    if not exercises or current_index >= len(exercises):
+        await callback.message.answer(
+            "Извините, текущая фраза для аудирования не найдена. Возможно, упражнение не активно или завершено.")
+        # Также можем удалить промежуточное сообщение, если оно есть
+        try:
+            await callback.message.delete()
+        except Exception as e:
+            print(f"Не удалось удалить сообщение (при ошибке данных): {e}")
+        return
+
+    current_exercise = exercises[current_index]
+    phrase_to_slow_down = current_exercise['phrase']  # Извлекаем фразу для замедления
+
+    # Удаляем сообщение, из которого была нажата кнопка (с утверждением и кнопками True/False)
+    try:
+        await callback.message.delete()
+    except Exception as e:
+        print(f"Не удалось удалить исходное сообщение с кнопками: {e}")
+
+    # Отправляем временное сообщение о генерации аудио
+    processing_msg = await callback.message.answer("🔄 Генерирую и отправляю замедленное аудио...")
+
+    # Генерируем замедленное аудио, используя вашу функцию generate_audio
+    # Имя файла должно быть уникальным
+    slower_audio_filename = f"listening_slow_{callback.from_user.id}_{current_index}_{phrase_to_slow_down[:20].replace(' ', '_')}"
+
+    slower_audio_path = await generate_audio(
+        text=phrase_to_slow_down,
+        filename_prefix=slower_audio_filename,
+        lang='en',
+        slow_mode=True  # Активируем замедленный режим
+    )
+
+    if slower_audio_path and os.path.exists(slower_audio_path):
+        try:
+            audio = FSInputFile(slower_audio_path)
+            # --- ВОТ ИЗМЕНЕНИЕ: answer_voice вместо answer_audio ---
+            await callback.message.answer_voice(
+                audio,
+                caption="🗣️ **Вот эта же фраза, но медленнее.**"  # Сообщение, которое будет под аудио
+            )
+            # Файл не удаляем, чтобы работал механизм кэширования в generate_audio
+        except Exception as e:
+            print(f"Ошибка отправки медленного голосового сообщения: {e}")
+            await callback.message.answer("Произошла ошибка при воспроизведении медленной фразы.")
+    else:
+        await callback.message.answer("Не удалось сгенерировать медленную версию голосового сообщения.")
+
+    # Удаляем временное сообщение о процессе генерации
+    try:
+        await processing_msg.delete()
+    except Exception as e:
+        print(f"Не удалось удалить сообщение о процессе: {e}")
+
+    # После отправки замедленного аудио, повторно выводим оригинальный вопрос с кнопками
+    # Здесь вызываем функцию, которая отвечает за показ текущего упражнения True/False
+    await show_listening_true_false(callback.message, state)
 
 @router.callback_query(F.data == "next", LessonStates.LISTENING_PHRASES_COMPLETE)
 async def listening_phrases_complete_next(callback: CallbackQuery, state: FSMContext):

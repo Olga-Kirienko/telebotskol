@@ -188,11 +188,17 @@ async def writing_command(message: Message, state: FSMContext):
     await start_writing_sentences(message, state)
 
 
+# start.py
+
 @router.callback_query(F.data.startswith("menu_"))
 async def handle_menu_navigation(callback: CallbackQuery, state: FSMContext):
     """Обработка навигации по меню"""
+    # --- ПЕРВЫМ ДЕЛОМ ОТВЕЧАЕМ НА CALLBACK QUERY ---
+    await callback.answer()
+    # --- ЭТО КРИТИЧНО! ---
+
     menu_type = callback.data.replace("menu_", "")
-    
+
     if menu_type == "terms":
         await callback.message.edit_text(
             "📖 **Блок: Изучение терминов**\n\n"
@@ -203,18 +209,18 @@ async def handle_menu_navigation(callback: CallbackQuery, state: FSMContext):
         # Можно сразу запустить блок терминов
         from bot.handlers.lesson import start_terms_block
         await start_terms_block(callback.message, state)
-        
+
     elif menu_type == "pronunciation":
         await callback.message.edit_text(
             "🗣️ **Блок: Произношение**\n\n"
             "Тренировка произношения IT терминов с голосовыми упражнениями.",
-            parse_mode="Markdown", 
+            parse_mode="Markdown",
             reply_markup=get_block_menu_keyboard()
         )
         # Запускаем блок произношения
         from bot.handlers.lesson import start_pronunciation_block
         await start_pronunciation_block(callback.message, state)
-        
+
     elif menu_type == "speaking":
         await callback.message.edit_text(
             "💬 **Блок: Говорение**\n\n"
@@ -224,7 +230,7 @@ async def handle_menu_navigation(callback: CallbackQuery, state: FSMContext):
         # Запускаем блок говорения
         from bot.handlers.lesson import start_speaking_block
         await start_speaking_block(callback.message, state)
-        
+
     elif menu_type == "lexical":
         await callback.message.edit_text(
             "📝 **Блок: Лексические упражнения**\n\n"
@@ -235,7 +241,7 @@ async def handle_menu_navigation(callback: CallbackQuery, state: FSMContext):
         # Запускаем лексический блок
         from bot.handlers.lesson import start_lexical_en_to_ru_block
         await start_lexical_en_to_ru_block(callback.message, state)
-        
+
     elif menu_type == "grammar":
         await callback.message.edit_text(
             "📚 **Блок: Грамматика**\n\n"
@@ -246,7 +252,7 @@ async def handle_menu_navigation(callback: CallbackQuery, state: FSMContext):
         # Запускаем блок грамматики
         from bot.handlers.lesson import start_grammar_block
         await start_grammar_block(callback.message, state)
-        
+
     elif menu_type == "exercises":
         await callback.message.edit_text(
             "✏️ **Блок: Практические упражнения**\n\n"
@@ -257,7 +263,7 @@ async def handle_menu_navigation(callback: CallbackQuery, state: FSMContext):
         # Запускаем блок упражнений
         from bot.handlers.lesson import start_verb_exercise
         await start_verb_exercise(callback.message, state)
-    
+
     elif menu_type == "listening":
         await callback.message.edit_text(
             "🎧 **Блок: Аудирование**\n\n"
@@ -267,7 +273,7 @@ async def handle_menu_navigation(callback: CallbackQuery, state: FSMContext):
         # Запускаем блок аудирования
         from bot.handlers.lesson import start_listening_true_false
         await start_listening_true_false(callback.message, state)
-        
+
     elif menu_type == "writing":
         await callback.message.edit_text(
             "✍️ **Блок: Письменная речь**\n\n"
@@ -277,5 +283,3 @@ async def handle_menu_navigation(callback: CallbackQuery, state: FSMContext):
         # Запускаем блок письма
         from bot.handlers.lesson import start_writing_sentences
         await start_writing_sentences(callback.message, state)
-   
-    await callback.answer()

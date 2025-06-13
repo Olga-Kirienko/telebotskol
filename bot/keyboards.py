@@ -129,19 +129,33 @@ def get_text_exercise_keyboard():
 def get_true_false_keyboard():
     """Клавиатура True/False для аудирования"""
     keyboard = InlineKeyboardBuilder()
-    keyboard.button(text="True ✅", callback_data="listening_true")
-    keyboard.button(text="False ❌", callback_data="listening_false")
-    keyboard.adjust(2)
+
+    # Первый ряд: кнопки True и False
+    keyboard.row(
+        InlineKeyboardButton(text="True ✅", callback_data="listening_true"),
+        InlineKeyboardButton(text="False ❌", callback_data="listening_false")
+    )
+    # Здесь adjust(2) больше не нужен после keyboard.row(), так как row() уже управляет размещением.
+
+    # Второй ряд: кнопка "Сказать медленнее"
+    keyboard.row(InlineKeyboardButton(text="🗣️ Сказать медленнее", callback_data="say_slower_listening"))
+
     return keyboard.as_markup()
 
 
 def get_listening_choice_keyboard(options: list, question_index: int = 0):
-    """Клавиатура множественного выбора для аудирования"""
+    """Клавиатура множественного выбора для аудирования (для других типов вопросов)"""
     keyboard = InlineKeyboardBuilder()
     for i, option in enumerate(options):
         callback_data = f"listening_choice_{question_index}_{i}_{option}"[:64]
         keyboard.button(text=option, callback_data=callback_data)
     keyboard.adjust(1)
+
+    # Оставляем эти кнопки здесь, если эта клавиатура тоже будет их использовать.
+
+    keyboard.row(InlineKeyboardButton(text="🗣️ Сказать медленнее", callback_data="say_slower_listening"))
+
+
     return keyboard.as_markup()
 
 
