@@ -1,15 +1,54 @@
-
 {
   "words": [
     {
-      "english": "analyze",
-      "russian": "пиксель",
-      "transcription": "/ˈpɪksəl/"
+      "english": "file",
+      "russian": "файл",
+      "transcription": "/faɪl/"
     },
     {
-      "english": "a black cat sat on a mat",
-      "russian": "обнаружение объектов",
-      "transcription": "/əbˈdʒɛkt dɪˈtɛkʃən/"
+      "english": "folder",
+      "russian": "папка",
+      "transcription": "/ˈfoʊldər/"
+    },
+    {
+      "english": "command",
+      "russian": "команда",
+      "transcription": "/kəˈmænd/"
+    },
+    {
+      "english": "user",
+      "russian": "пользователь",
+      "transcription": "/ˈjuːzər/"
+    },
+    {
+      "english": "data",
+      "russian": "данные",
+      "transcription": "/ˈdeɪtə/"
+    },
+    {
+      "english": "run",
+      "russian": "запускать",
+      "transcription": "/rʌn/"
+    },
+    {
+      "english": "save",
+      "russian": "сохранять",
+      "transcription": "/seɪv/"
+    },
+    {
+      "english": "open",
+      "russian": "открывать",
+      "transcription": "/ˈoʊpən/"
+    },
+    {
+      "english": "create",
+      "russian": "создавать",
+      "transcription": "/kriˈeɪt/"
+    },
+    {
+      "english": "error",
+      "russian": "ошибка",
+      "transcription": "/ˈɛrər/"
     }
   ]
 }

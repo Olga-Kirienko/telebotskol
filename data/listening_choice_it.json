@@ -1,24 +1,57 @@
 [
     {
-        "phrase": "Machine learning algorithms analyze data to find hidden patterns and make predictions.",
-        "question": "What do machine learning algorithms do?",
+        "phrase": "The user opens a folder to find the file.",
+        "question": "What does the user do?",
         "options": [
-            "They delete unnecessary data",
-            "They find patterns and make predictions", 
-            "They only store information",
-            "They replace human programmers"
+            "Creates a command",
+            "Saves an error", 
+            "Opens a folder",
+            "Runs new data"
         ],
-        "correct_answer": "They find patterns and make predictions"
+        "correct_answer": "Opens a folder"
     },
     {
-        "phrase": "Convolutional neural networks are especially effective for image recognition tasks.",
-        "question": "What are CNNs best used for?",
+        "phrase": "She saves the file before closing the program.",
+        "question": "What does she do with the file?",
         "options": [
-            "Text processing",
-            "Audio analysis", 
-            "Image recognition",
-            "Database management"
+            "Deletes the file",
+            "Saves the file", 
+            "Runs the file",
+            "Creates the file"
         ],
-        "correct_answer": "Image recognition"
+        "correct_answer": "Saves the file"
+    },
+    {
+        "phrase": "He runs a command in the terminal.",
+        "question": "What does he do?",
+        "options": [
+            "Creates a folder",
+            "Runs a command", 
+            "Saves data",
+            "Finds an error"
+        ],
+        "correct_answer": "Runs a command"
+    },
+    {
+        "phrase": "We create a new folder for important data.",
+        "question": "What do we do with the folder?",
+        "options": [
+            "Save it",
+            "Delete it", 
+            "Create it",
+            "Open it"
+        ],
+        "correct_answer": "Create it"
+    },
+    {
+        "phrase": "There is an error in the command.",
+        "question": "What is wrong?",
+        "options": [
+            "There is no file",
+            "There is an error in the command", 
+            "There is no user",
+            "There is no folder"
+        ],
+        "correct_answer": "There is an error in the command"
     }
 ]

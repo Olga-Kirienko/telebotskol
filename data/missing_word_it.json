@@ -1,10 +1,42 @@
 [
     {
-        "statement": "The neural network consists of multiple ______.",
-        "answers": ["layers", "nodes", "neurons"]
+        "statement": "I want to [___] a new folder.",
+        "answers": ["create", "open"]
     },
     {
-        "statement": "Machine learning uses ______ to make predictions.",
-        "answers": ["algorithms", "models"]
+        "statement": "Please [___] the file before closing.",
+        "answers": ["save"]
+    },
+    {
+        "statement": "He can [___] the command now.",
+        "answers": ["run"]
+    },
+    {
+        "statement": "The user opens the [___].",
+        "answers": ["folder", "file"]
+    },
+    {
+        "statement": "There is an [___] in the data.",
+        "answers": ["error"]
+    },
+    {
+        "statement": "We process [___] every day.",
+        "answers": ["data"]
+    },
+    {
+        "statement": "She wants to [___] a new user.",
+        "answers": ["create", "save"]
+    },
+    {
+        "statement": "You can [___] this file with a text editor.",
+        "answers": ["open", "run", "create"]
+    },
+    {
+        "statement": "They [___] important files every hour.",
+        "answers": ["save"]
+    },
+    {
+        "statement": "The system [___] a command automatically.",
+        "answers": ["runs", "saves"]
     }
 ]

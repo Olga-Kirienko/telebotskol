@@ -1,12 +1,42 @@
 [
     {
-        "text": "The neural network [___] data from multiple sources. (process)",
-        "answer": "processes",
-        "explanation": "Для he/she/it в Present Simple добавляется окончание -es"
+        "text": "I [___] the file every day. (save)",
+        "answer": "save",
+        "explanation": "I + Present Simple — глагол без изменений"
     },
     {
-        "text": "Machine learning algorithms [___] patterns in big datasets. (find)",
-        "answer": "find",
-        "explanation": "Для they Present Simple используется глагол в начальной форме"
+        "text": "He [___] the program in the morning. (run)",
+        "answer": "runs",
+        "explanation": "He — 3 лицо ед. ч., добавляем -s"
+    },
+    {
+        "text": "She always [___] a new folder. (create)",
+        "answer": "creates",
+        "explanation": "She — 3 лицо ед. ч., добавляем -s"
+    },
+    {
+        "text": "We [___] the document before exit. (save)",
+        "answer": "save",
+        "explanation": "We — множественное число, глагол без изменений"
+    },
+    {
+        "text": "You [___] the window to see the file. (open)",
+        "answer": "open",
+        "explanation": "You — множественное или единственное число, глагол без изменений"
+    },
+    {
+        "text": "They [___] a command here. (run)",
+        "answer": "run",
+        "explanation": "They — множественное число, глагол без изменений"
+    },
+    {
+        "text": "It [___] data automatically. (save)",
+        "answer": "saves",
+        "explanation": "It — 3 лицо ед. ч., добавляем -s"
+    },
+    {
+        "text": "The system often [___] an error . (create)",
+        "answer": "creates",
+        "explanation": "The system — как he/she/it, добавляем -s"
     }
 ]

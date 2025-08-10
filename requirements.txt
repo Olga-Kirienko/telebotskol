@@ -38,3 +38,4 @@ torchaudio==2.6.0
 torch==2.6.0
 librosa==0.11.0
 transformers==4.52.4
+psycopg2-binary==2.9.9

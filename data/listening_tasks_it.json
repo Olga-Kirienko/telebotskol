@@ -1,12 +1,27 @@
 [
     {
-        "phrase": "Neural networks learn patterns from large datasets to make predictions.",
-        "statement": "Neural networks can only work with small amounts of data.",
+        "phrase": "I save the file before closing the program.",
+        "statement": "You lose your data if you don't save the file.",
+        "correct_answer": "True"
+    },
+    {
+        "phrase": "She opens the folder to find the file.",
+        "statement": "She wants to see what is inside the folder.",
+        "correct_answer": "True"
+    },
+    {
+        "phrase": "He runs a command in the terminal.",
+        "statement": "He uses a command to start the program.",
+        "correct_answer": "True"
+    },
+    {
+        "phrase": "There is an error in the command.",
+        "statement": "The command works perfectly without any problems.",
         "correct_answer": "False"
     },
     {
-        "phrase": "Python is one of the most popular programming languages for machine learning and data science.",
-        "statement": "Python is widely used in machine learning projects.",
-        "correct_answer": "True"
+        "phrase": "We create a new folder for important data.",
+        "statement": "We delete the folder after saving the data.",
+        "correct_answer": "False"
     }
 ]

@@ -1,10 +1,22 @@
 [
     {
-        "phrase": "The model achieved high accuracy",
-        "transcription": "/ðə ˈmɒdl əˈtʃiːvd haɪ ˈækjʊrəsi/"
+        "phrase": "I save the file every day.",
+        "transcription": "/aɪ seɪv ðə faɪl ˈɛvri deɪ/"
     },
     {
-        "phrase": "We need to optimize architecture.",
-        "transcription": "/wi niːd tuː ˈɒptɪmaɪz ˈɑːkɪtektʃə/"
+        "phrase": "She opens the folder now.",
+        "transcription": "/ʃi ˈoʊpənz ðə ˈfɒldə naʊ/"
+    },
+    {
+        "phrase": "He runs a command in the terminal.",
+        "transcription": "/hi rʌnz ə kəˈmænd ɪn ðə ˈtɜːrmɪnəl/"
+    },
+    {
+        "phrase": "We create new data for the test.",
+        "transcription": "/wi krɪˈeɪt nuː deɪtə fɔːr ðə test/"
+    },
+    {
+        "phrase": "There is an error in the file.",
+        "transcription": "/ˈðɛər ɪz ən ˈɛrər ɪn ðə faɪl/"
     }
 ]

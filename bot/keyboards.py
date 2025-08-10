@@ -96,7 +96,9 @@ def get_main_menu_keyboard():
     keyboard.button(text="✍️ Письмо", callback_data="menu_writing")
     keyboard.button(text="💬 Говорение", callback_data="menu_speaking")
     keyboard.button(text="🔄 Перезапуск", callback_data="restart_lesson")
-    keyboard.adjust(1, 2, 2, 2, 2, 2, 1)
+    keyboard.button(text="📊 Моя статистика", callback_data="show_statistics")
+    keyboard.button(text="🔐 Авторизация / Регистрация", callback_data="auth_menu")
+    keyboard.adjust(1, 2, 2, 2, 2, 2, 1, 1, 1)
     return keyboard.as_markup()
 
 
@@ -131,26 +133,29 @@ def get_true_false_keyboard():
     keyboard = InlineKeyboardBuilder()
     keyboard.button(text="True ✅", callback_data="listening_true")
     keyboard.button(text="False ❌", callback_data="listening_false")
-    keyboard.adjust(2)
+    keyboard.button(text="Сказать медленнее 🐢", callback_data="listening_slow_down")
+    keyboard.adjust(2,1)
     return keyboard.as_markup()
 
 
 def get_listening_choice_keyboard(options: list, question_index: int = 0):
-    """Клавиатура множественного выбора для аудирования"""
     keyboard = InlineKeyboardBuilder()
     for i, option in enumerate(options):
         callback_data = f"listening_choice_{question_index}_{i}_{option}"[:64]
         keyboard.button(text=option, callback_data=callback_data)
-    keyboard.adjust(1)
+
+    # Добавляем кнопку замедления с уникальным callback_data
+    keyboard.button(text="Сказать медленнее 🐢", callback_data="listening_choice_slow_down")
+    keyboard.adjust(1, repeat=True)
     return keyboard.as_markup()
 
 
 def get_listening_phrases_keyboard():
-    """Клавиатура для упражнений с фразами"""
     keyboard = InlineKeyboardBuilder()
     keyboard.button(text="Записать фразу 🎤", callback_data="record_phrase")
-    keyboard.button(text="Пропустить ⏭️", callback_data="skip_phrase")
-    keyboard.adjust(1)
+    keyboard.button(text="Пропустить фразу ⏭️", callback_data="skip_phrase")
+    keyboard.button(text="Сказать медленнее 🐢", callback_data="listening_phrases_slow_down")
+    keyboard.adjust(1, 2)
     return keyboard.as_markup()
 
 
@@ -225,4 +230,49 @@ def get_continue_keyboard():
     """Кнопка 'Продолжить' после ответа"""
     keyboard = InlineKeyboardBuilder()
     keyboard.button(text="Продолжить ➡️", callback_data="continue_exercise")
+    return keyboard.as_markup()
+
+
+def get_keyboard_with_menu(current_keyboard: InlineKeyboardMarkup) -> InlineKeyboardMarkup:
+    """
+    Добавляет кнопку '🏠 Главное меню' к существующей клавиатуре.
+
+    :param current_keyboard: Текущая InlineKeyboardMarkup, к которой нужно добавить кнопку.
+    :return: Модифицированная InlineKeyboardMarkup с добавленной кнопкой 'Главное меню'.
+    """
+    # Создаем новый InlineKeyboardBuilder из существующей клавиатуры
+    builder = InlineKeyboardBuilder()
+    builder.attach(InlineKeyboardBuilder.from_markup(current_keyboard))
+
+    # Добавляем кнопку "Главное меню"
+    builder.row(InlineKeyboardButton(text="🏠 Главное меню", callback_data="main_menu"))
+
+    return builder.as_markup()
+
+
+# Клавиатуры для авторизации
+def get_auth_choice_keyboard():
+    """Клавиатура выбора между регистрацией и авторизацией"""
+    keyboard = InlineKeyboardBuilder()
+    keyboard.button(text="📝 Регистрация", callback_data="auth_register")
+    keyboard.button(text="🔑 Авторизация", callback_data="auth_login")
+    keyboard.button(text="🔙 Назад", callback_data="main_menu")
+    keyboard.adjust(2, 1)
+    return keyboard.as_markup()
+
+
+def get_register_confirm_keyboard():
+    """Клавиатура подтверждения регистрации"""
+    keyboard = InlineKeyboardBuilder()
+    keyboard.button(text="✅ Подтвердить", callback_data="register_confirm")
+    keyboard.button(text="🔄 Начать заново", callback_data="auth_register")
+    keyboard.button(text="🔙 Отмена", callback_data="auth_menu")
+    keyboard.adjust(2, 1)
+    return keyboard.as_markup()
+
+
+def get_auth_cancel_keyboard():
+    """Клавиатура отмены авторизации"""
+    keyboard = InlineKeyboardBuilder()
+    keyboard.button(text="🔙 Отмена", callback_data="auth_menu")
     return keyboard.as_markup()

@@ -1,10 +1,14 @@
 [
     {
-        "text": "The model learns from training data.",
-        "answer": "Does the model learn from training data?"
+        "text": "He opens data in the program.",
+        "answer": "Does he open data in the program?"
     },
     {
-        "text": "Python supports deep learning frameworks.",
-        "answer": "Does Python support deep learning frameworks?"
+        "text": "The system runs an error check.",
+        "answer": "Does the system run an error check?"
+    },
+    {
+        "text": "She creates a user profile.",
+        "answer": "Does she create a user profile?"
     }
 ]

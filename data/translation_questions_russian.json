@@ -1,11 +1,43 @@
 {
-  "модель": {
-    "correct": "model",
-    "options": ["model", "data", "result"]
+  "ошибка": {
+    "correct": "error",
+    "options": ["save", "error", "create", "command"]
   },
-  "признак": {
-    "correct": "feature",
-    "options": ["feature", "error", "algorithm"]
+  "открывать": {
+    "correct": "open",
+    "options": ["data", "run", "open", "folder"]
+  },
+  "файл": {
+    "correct": "file",
+    "options": ["user", "file", "save", "create"]
+  },
+  "создавать": {
+    "correct": "create",
+    "options": ["create", "open", "error", "data"]
+  },
+  "запускать": {
+    "correct": "run",
+    "options": ["run", "user", "save", "folder"]
+  },
+  "пользователь": {
+    "correct": "user",
+    "options": ["user", "data", "command", "file"]
+  },
+  "сохранять": {
+    "correct": "save",
+    "options": ["save", "folder", "create", "user"]
+  },
+  "данные": {
+    "correct": "data",
+    "options": ["data", "command", "open", "run"]
+  },
+  "команда": {
+    "correct": "command",
+    "options": ["command", "error", "folder", "save"]
+  },
+  "папка": {
+    "correct": "folder",
+    "options": ["folder", "run", "user", "create"]
   }
 }
   

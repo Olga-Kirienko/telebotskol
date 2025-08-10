@@ -1,23 +1,30 @@
 [
     {
-        "statement": "The algorithm processes data efficiently.",
+        "statement": "I save a file after editing.",
         "negations": [
-            "The algorithm does not process data efficiently",
-            "The algorithm doesn't process data efficiently"
+            "I do not save a file after editing",
+            "I don't save a file after editing"
         ]
     },
     {
-        "statement": "Neural networks learn from training data.",
+        "statement": "She opens a folder",
         "negations": [
-            "Neural networks do not learn from training data",
-            "Neural networks don't learn from training data"
+            "She does not open a folder",
+            "She doesn't open a folder"
         ]
     },
     {
-        "statement": "Python supports machine learning libraries.",
+        "statement": "The system runs a command",
         "negations": [
-            "Python does not support machine learning libraries",
-            "Python doesn't support machine learning libraries"
+            "The system does not run a command",
+            "The system doesn't run a command"
+        ]
+    },
+    {
+        "statement": "They create data for the test",
+        "negations": [
+            "They do not create data for the test",
+            "They don't create data for the test"
         ]
     }
 ]

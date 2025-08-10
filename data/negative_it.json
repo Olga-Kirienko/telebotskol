@@ -1,10 +1,30 @@
 [
     {
-        "text": "Преобразуйте предложение в отрицательное: 'The neural network processes data'",
-        "answer": ["The neural network does not process data", "The neural network doesn't process data"]
+        "text": "I save a file after editing.",
+        "answer": [
+            "I do not save a file after editing",
+            "I don't save a file after editing"
+        ]
     },
     {
-        "text": "Преобразуйте предложение в отрицательное: 'Machine learning algorithms improve over time'",
-        "answer": ["Machine learning algorithms do not improve over time", "Machine learning algorithms don't improve over time"]
+        "text": "She opens a folder",
+        "answer": [
+            "She does not open a folder",
+            "She doesn't open a folder"
+        ]
+    },
+    {
+        "text": "The system runs a command",
+        "answer": [
+            "The system does not run a command",
+            "The system doesn't run a command"
+        ]
+    },
+    {
+        "text": "They create data for the test",
+        "answer": [
+            "They do not create data for the test",
+            "They don't create data for the test"
+        ]
     }
 ]

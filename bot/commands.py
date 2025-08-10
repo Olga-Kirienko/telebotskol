@@ -20,7 +20,7 @@ async def set_bot_commands(bot: Bot):
         BotCommand(command="writing", description="✍️ Письмо"),
         BotCommand(command="restart", description="🔄 Перезапуск урока"),
         BotCommand(command="help", description="❓ Помощь"),
-        
+        BotCommand(command="progress", description="📊 Прогресс"),
     ]
     
     await bot.set_my_commands(commands, BotCommandScopeDefault())

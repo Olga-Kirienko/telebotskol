@@ -1,18 +1,14 @@
 [
     {
-        "statement": "The model learns from training data.",
-        "question": "Does the model learn from training data?"
+        "statement": "He opens data in the program.",
+        "question": "Does he open data in the program?"
     },
     {
-        "statement": "Python supports deep learning frameworks.",
-        "question": "Does Python support deep learning frameworks?"
+        "statement": "The system runs an error check.",
+        "question": "Does the system run an error check?"
     },
     {
-        "statement": "Data scientists use visualization tools.",
-        "question": "Do data scientists use visualization tools?"
-    },
-    {
-        "statement": "Neural networks process information in layers.",
-        "question": "Do neural networks process information in layers?"
+        "statement": "She creates a user profile.",
+        "question": "Does she create a user profile?"
     }
 ]

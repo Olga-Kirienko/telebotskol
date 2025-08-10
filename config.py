@@ -10,11 +10,22 @@ BOT_TOKEN = os.getenv("BOT_TOKEN")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 
 # Paths
-DATA_PATH = "data/"
-MEDIA_PATH = "media/"
-AUDIO_PATH = "media/audio/"
-IMAGES_PATH = "media/images/"
+#DATA_PATH = "data/"
+#MEDIA_PATH = "media/"
+#AUDIO_PATH = "media/audio/"
+#IMAGES_PATH = "media/images/"
 
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+DATA_PATH = os.path.join(BASE_DIR, 'data')
+MEDIA_PATH = os.path.join(BASE_DIR, 'media') # Ошибка: MEDIA_PATH уже определен как os.path.join(BASE_DIR, 'media')
+AUDIO_PATH = os.path.join(MEDIA_PATH, 'audio')
+IMAGES_PATH = os.path.join(MEDIA_PATH, 'images')
+
+CURRENT_LESSON_ID = "introduction_to_it_english"
+
+os.makedirs(DATA_PATH, exist_ok=True)
+os.makedirs(AUDIO_PATH, exist_ok=True)
+os.makedirs(IMAGES_PATH, exist_ok=True)
 # Messages
 MESSAGES = {
     "welcome": "Привет! Давай изучать английский язык! 🇬🇧",
@@ -81,6 +92,6 @@ MESSAGES = {
     "skip_button": "Пропустить ⏭️"
 }
 
-# Ensure directories exist
-os.makedirs(AUDIO_PATH, exist_ok=True)
-os.makedirs(IMAGES_PATH, exist_ok=True)
+
+
+

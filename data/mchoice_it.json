@@ -1,14 +1,26 @@
 [
     {
-        "sentence": "This algorithm [___] very efficient for large datasets.",
-        "options": ["is", "are", "be", "being"],
-        "answer": "is",
-        "explanation": "Используется 'is' потому что 'algorithm' - единственное число (this algorithm)"
+        "sentence": "She [___] new data for the experiment every day.",
+        "options": ["create", "creates", "is creating", "created"],
+        "answer": "creates",
+        "explanation": "Используется 'creates', потому что речь о регулярном действии (Present Simple) и подлежащее третье лицо единственного числа — She"
     },
     {
-        "sentence": "Data scientists [___] Python for machine learning projects right now.",
-        "options": ["use", "uses", "are using", "using"],
-        "answer": "are using",
-        "explanation": "Используется 'are using', так как now указывает на действие происходящее в данный момент, значит нужно использовать present Cont "
+        "sentence": "They [___] a command before they start work.",
+        "options": ["save", "saves", "are saving", "saved"],
+        "answer": "save",
+        "explanation": "Используется 'save', потому что действие повторяется регулярно, и подлежащее множественного числа — They (Present Simple)"
+    },
+    {
+        "sentence": "He [___] the file to check its contents.",
+        "options": ["open", "opens", "is opening", "opened"],
+        "answer": "opens",
+        "explanation": "Используется 'opens', потому что это регулярное действие, и подлежащее третье лицо единственного числа — He (Present Simple)"
+    },
+    {
+        "sentence": "We [___] a command to start the program.",
+        "options": ["run", "runs", "are running", "ran"],
+        "answer": "run",
+        "explanation": "Используется 'run', потому что действие происходит регулярно, и подлежащее множественного числа — We (Present Simple)"
     }
 ]

@@ -1,10 +1,22 @@
 {
-  "pixel": {
-    "parts": ["pix", "el"],
-    "scrambled_parts": ["el", "pix"]
+  "command": {
+    "parts": ["com", "man", "d"],
+    "scrambled_parts": ["man", "d", "com"]
   },
-  "algorithm": {
-    "parts": ["al", "go", "rithm"],
-    "scrambled_parts": ["go", "al", "rithm"]
+  "create": {
+    "parts": ["cre", "a", "te"],
+    "scrambled_parts": ["te", "cre", "a"]
+  },
+  "folder": {
+    "parts": ["fol", "d", "er"],
+    "scrambled_parts": ["er", "fol", "d"]
+  },
+  "error": {
+    "parts": ["e", "rr", "or"],
+    "scrambled_parts": ["rr", "or", "e"]
+  },
+  "data": {
+    "parts": ["da", "t", "a"],
+    "scrambled_parts": ["a", "da", "t"]
   }
 }
